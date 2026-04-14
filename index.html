@@ -1,0 +1,414 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Plus, Clock, User, Calendar, CheckCircle2, Circle, Trash2, X, 
+  RefreshCw, LogOut, ShieldAlert, Zap, Ban, ChevronDown, 
+  LayoutDashboard, CalendarDays, ChevronLeft, ChevronRight
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
+
+// --- Firebase Initialization ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+let app, auth, db;
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (error) {
+  console.error("Firebase initialization error:", error);
+}
+
+// Styling Constants
+const PRIMARY_GRADIENT = 'linear-gradient(135deg, #0060A9 0%, #003a66 100%)';
+const ACCENT_GRADIENT = 'linear-gradient(135deg, #10B981 0%, #059669 100%)';
+const BACKGROUND_GRADIENT = 'linear-gradient(180deg, #F8FAFC 0%, #E2E8F0 100%)';
+
+const TEAM_MEMBERS = ["Kiet Vu", "Trung Pham", "Hung Pham", "Huy Tang"];
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [username, setUsername] = useState(() => localStorage.getItem('task_hub_username') || '');
+  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('task_hub_is_logged_in') === 'true');
+  const [viewMode, setViewMode] = useState('board'); // 'board' or 'calendar'
+  const [calendarType, setCalendarType] = useState('month'); // 'month' or 'week'
+  const [currentDate, setCurrentDate] = useState(new Date());
+  
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskAssignee, setNewTaskAssignee] = useState(TEAM_MEMBERS[0]);
+  const [newTaskDueDate, setNewTaskDueDate] = useState('');
+  const [isWeekly, setIsWeekly] = useState(false);
+
+  // --- Auth & Data Fetching ---
+  useEffect(() => {
+    if (!auth) return;
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) { console.error("Auth failed", err); }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (!currentUser) setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user || !db || !isLoggedIn) return;
+    const tasksCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'team_tasks');
+    const unsubscribe = onSnapshot(tasksCollectionRef, 
+      (snapshot) => {
+        const fetchedTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        fetchedTasks.sort((a, b) => b.createdAt - a.createdAt);
+        setTasks(fetchedTasks);
+        setLoading(false);
+      },
+      (err) => { setLoading(false); }
+    );
+    return () => unsubscribe();
+  }, [user, isLoggedIn]);
+
+  // --- Actions ---
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (username.trim()) {
+      localStorage.setItem('task_hub_username', username.trim());
+      localStorage.setItem('task_hub_is_logged_in', 'true');
+      setIsLoggedIn(true);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('task_hub_username');
+    localStorage.removeItem('task_hub_is_logged_in');
+    setIsLoggedIn(false);
+    setUsername('');
+  };
+
+  const handleAddTask = async (e) => {
+    e.preventDefault();
+    if (!newTaskTitle.trim() || !user || !db) return;
+    const tasksCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'team_tasks');
+    try {
+      await addDoc(tasksCollectionRef, {
+        title: newTaskTitle,
+        assignee: newTaskAssignee,
+        dueDate: newTaskDueDate,
+        isWeekly: isWeekly,
+        status: 'todo',
+        progress: 0,
+        createdAt: Date.now(),
+        createdBy: username,
+        creatorUid: user.uid
+      });
+      setNewTaskTitle(''); 
+      setNewTaskAssignee(TEAM_MEMBERS[0]); 
+      setNewTaskDueDate(''); 
+      setIsWeekly(false); 
+      setIsModalOpen(false);
+    } catch (err) { console.error(err); }
+  };
+
+  const updateTaskStatus = async (task, newStatus) => {
+    if (!user || !db) return;
+    const taskRef = doc(db, 'artifacts', appId, 'public', 'data', 'team_tasks', task.id);
+    let progress = newStatus === 'done' ? 100 : (newStatus === 'todo' ? 0 : 10);
+    const updateData = { status: newStatus, progress, completedAt: newStatus === 'done' ? Date.now() : null };
+    try {
+      await updateDoc(taskRef, updateData);
+      if (newStatus === 'done' && task.isWeekly) {
+        const nextDueDate = task.dueDate ? new Date(task.dueDate) : new Date();
+        if (task.dueDate) nextDueDate.setDate(nextDueDate.getDate() + 7);
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'team_tasks'), {
+          ...task,
+          id: undefined,
+          dueDate: nextDueDate.toISOString().split('T')[0],
+          status: 'todo',
+          progress: 0,
+          createdAt: Date.now(),
+          completedAt: null
+        });
+      }
+    } catch (err) { console.error(err); }
+  };
+
+  const updateTaskProgress = async (taskId, progress) => {
+    if (!user || !db) return;
+    try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'team_tasks', taskId), { progress }); } catch (err) { console.error(err); }
+  };
+
+  const deleteTask = async (taskId) => {
+    if (!user || !db) return;
+    try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'team_tasks', taskId)); } catch (err) { console.error(err); }
+  };
+
+  const activeTasks = tasks.filter(task => {
+    if (task.status !== 'done') return true;
+    if (!task.completedAt) return true;
+    return (Date.now() - task.completedAt) < (3 * 24 * 60 * 60 * 1000);
+  });
+
+  // --- Calendar Logic ---
+  const calendarDays = useMemo(() => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    
+    if (calendarType === 'month') {
+      const firstDayOfMonth = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const days = [];
+      // Padding prev month
+      const prevMonthLastDay = new Date(year, month, 0).getDate();
+      for (let i = firstDayOfMonth - 1; i >= 0; i--) {
+        days.push({ day: prevMonthLastDay - i, month: month - 1, year, current: false });
+      }
+      // Current month
+      for (let i = 1; i <= daysInMonth; i++) {
+        days.push({ day: i, month, year, current: true });
+      }
+      // Padding next month
+      const remaining = 42 - days.length;
+      for (let i = 1; i <= remaining; i++) {
+        days.push({ day: i, month: month + 1, year, current: false });
+      }
+      return days;
+    } else {
+      // Week view logic
+      const startOfWeek = new Date(currentDate);
+      startOfWeek.setDate(currentDate.getDate() - currentDate.getDay());
+      const days = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(startOfWeek);
+        d.setDate(startOfWeek.getDate() + i);
+        days.push({ day: d.getDate(), month: d.getMonth(), year: d.getFullYear(), current: true });
+      }
+      return days;
+    }
+  }, [currentDate, calendarType]);
+
+  const changeDate = (offset) => {
+    const newDate = new Date(currentDate);
+    if (calendarType === 'month') {
+      newDate.setMonth(currentDate.getMonth() + offset);
+    } else {
+      newDate.setDate(currentDate.getDate() + (offset * 7));
+    }
+    setCurrentDate(newDate);
+  };
+
+  // --- Render Helpers ---
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: BACKGROUND_GRADIENT }}>
+        <div className="bg-white p-12 rounded-[2.5rem] shadow-2xl w-full max-w-md relative overflow-hidden">
+          <div className="text-center mb-10">
+            <div className="w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl" style={{ background: PRIMARY_GRADIENT }}>
+              <Zap size={40} className="text-white fill-white/20" />
+            </div>
+            <h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase">Task Hub</h2>
+            <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] mt-2">MiTek Vietnam • Internal</p>
+          </div>
+          <form onSubmit={handleLogin} className="space-y-6">
+            <input required type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none font-bold text-lg" />
+            <button type="submit" className="w-full py-4 text-white rounded-2xl font-black uppercase tracking-widest transition-all shadow-xl hover:scale-[1.02]" style={{ background: PRIMARY_GRADIENT }}>Authorize</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen font-sans pb-10 text-slate-800" style={{ background: BACKGROUND_GRADIENT }}>
+      {/* Header */}
+      <header className="sticky top-0 z-30 shadow-xl" style={{ background: PRIMARY_GRADIENT }}>
+        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-6">
+             <h1 className="text-white text-2xl font-black uppercase tracking-tighter">Task Hub</h1>
+             <div className="hidden md:flex bg-white/10 p-1 rounded-xl">
+               <button onClick={() => setViewMode('board')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${viewMode === 'board' ? 'bg-white text-blue-900 shadow-lg' : 'text-white/70 hover:text-white'}`}>
+                 <LayoutDashboard size={14}/> Board
+               </button>
+               <button onClick={() => setViewMode('calendar')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${viewMode === 'calendar' ? 'bg-white text-blue-900 shadow-lg' : 'text-white/70 hover:text-white'}`}>
+                 <CalendarDays size={14}/> Calendar
+               </button>
+             </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="hidden lg:flex items-center gap-3 px-4 py-2 bg-white/10 rounded-xl text-white mr-2">
+              <User size={14} /> <span className="text-[10px] font-black uppercase">{username}</span>
+            </div>
+            <button onClick={() => setIsModalOpen(true)} className="bg-white text-blue-900 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all shadow-lg flex items-center gap-2">
+              <Plus size={16} strokeWidth={3}/> New Task
+            </button>
+            <button onClick={handleLogout} className="p-2.5 text-white/60 hover:text-white bg-black/10 rounded-xl"><LogOut size={18} /></button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {viewMode === 'board' ? (
+          // --- BOARD VIEW ---
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {[
+              { id: 'todo', title: 'Pending', icon: Circle, color: 'text-slate-400' },
+              { id: 'in_progress', title: 'Processing', icon: Clock, color: 'text-blue-500' },
+              { id: 'done', title: 'Completed', icon: CheckCircle2, color: 'text-emerald-500' }
+            ].map(col => (
+              <div key={col.id} className="flex flex-col gap-6">
+                <div className="flex justify-between items-center px-2">
+                  <h3 className={`font-black text-xs uppercase tracking-[0.2em] flex items-center gap-2 ${col.color}`}>
+                    <col.icon size={18} /> {col.title}
+                  </h3>
+                  <span className="text-[10px] font-black bg-white px-3 py-1 rounded-full shadow-sm">{activeTasks.filter(t => t.status === col.id).length}</span>
+                </div>
+                <div className="space-y-4">
+                  {activeTasks.filter(t => t.status === col.id).map(task => (
+                    <TaskCard key={task.id} task={task} onUpdate={updateTaskStatus} onProgress={updateTaskProgress} onDelete={deleteTask} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          // --- CALENDAR VIEW ---
+          <div className="bg-white rounded-[2rem] shadow-2xl border border-slate-100 overflow-hidden">
+            <div className="p-8 border-b border-slate-100 flex flex-wrap justify-between items-center gap-4 bg-slate-50/50">
+              <div className="flex items-center gap-4">
+                <div className="flex bg-white p-1 rounded-xl shadow-inner border border-slate-200">
+                  <button onClick={() => setCalendarType('month')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${calendarType === 'month' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400'}`}>Month</button>
+                  <button onClick={() => setCalendarType('week')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${calendarType === 'week' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400'}`}>Week</button>
+                </div>
+                <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter ml-4">
+                  {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                </h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => changeDate(-1)} className="p-3 bg-white rounded-xl shadow-md border border-slate-100 hover:bg-slate-50 transition-all"><ChevronLeft size={20}/></button>
+                <button onClick={() => setCurrentDate(new Date())} className="px-6 py-3 bg-white rounded-xl shadow-md border border-slate-100 text-[10px] font-black uppercase tracking-widest hover:bg-slate-50">Today</button>
+                <button onClick={() => changeDate(1)} className="p-3 bg-white rounded-xl shadow-md border border-slate-100 hover:bg-slate-50 transition-all"><ChevronRight size={20}/></button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                <div key={day} className="py-4 text-center text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{day}</div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7">
+              {calendarDays.map((dateObj, idx) => {
+                const dateKey = `${dateObj.year}-${String(dateObj.month + 1).padStart(2, '0')}-${String(dateObj.day).padStart(2, '0')}`;
+                const dayTasks = tasks.filter(t => t.dueDate === dateKey);
+                const isToday = new Date().toDateString() === new Date(dateObj.year, dateObj.month, dateObj.day).toDateString();
+                
+                return (
+                  <div key={idx} className={`min-h-[140px] border-r border-b border-slate-50 p-3 transition-colors ${!dateObj.current ? 'bg-slate-50/50 grayscale' : 'hover:bg-blue-50/20'}`}>
+                    <div className="flex justify-between items-start mb-2">
+                      <span className={`text-xs font-black ${isToday ? 'w-7 h-7 flex items-center justify-center bg-blue-600 text-white rounded-full' : 'text-slate-400'}`}>
+                        {dateObj.day}
+                      </span>
+                    </div>
+                    <div className="space-y-1 overflow-y-auto max-h-[100px] scrollbar-hide">
+                      {dayTasks.map(t => (
+                        <div key={t.id} className={`px-2 py-1.5 rounded-lg text-[9px] font-bold border-l-2 truncate cursor-pointer transition-all hover:scale-[1.02] ${t.assignee === username ? 'bg-blue-50 border-blue-600 text-blue-900 shadow-sm ring-1 ring-blue-100' : 'bg-slate-100 border-slate-300 text-slate-600'}`}>
+                          {t.status === 'done' && '✓ '}{t.title}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-8 border-b border-slate-100 flex justify-between items-center">
+              <h3 className="font-black text-slate-800 uppercase tracking-widest text-sm">New Mission</h3>
+              <button onClick={() => setIsModalOpen(false)} className="p-2 bg-slate-100 rounded-xl hover:text-red-500"><X size={20}/></button>
+            </div>
+            <form onSubmit={handleAddTask} className="p-8 space-y-6">
+              <textarea required rows={2} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="Task details..." className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-xl focus:border-blue-500 outline-none font-bold" />
+              <div className="grid grid-cols-2 gap-4">
+                <select value={newTaskAssignee} onChange={(e) => setNewTaskAssignee(e.target.value)} className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none">
+                  {TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+                <input required type="date" value={newTaskDueDate} onChange={(e) => setNewTaskDueDate(e.target.value)} className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none" />
+              </div>
+              <label className="flex items-center gap-3 p-4 bg-blue-50 rounded-xl cursor-pointer">
+                <input type="checkbox" checked={isWeekly} onChange={() => setIsWeekly(!isWeekly)} className="w-5 h-5 rounded" />
+                <span className="text-[10px] font-black uppercase text-blue-900">Weekly Recurring</span>
+              </label>
+              <button type="submit" className="w-full py-4 text-white rounded-xl font-black uppercase tracking-widest shadow-xl" style={{ background: PRIMARY_GRADIENT }}>Confirm Dispatch</button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TaskCard({ task, onUpdate, onProgress, onDelete }) {
+  const getStatusStyle = () => {
+    if (task.status === 'done') return 'from-emerald-400 to-emerald-600';
+    if (task.status === 'in_progress') return 'from-blue-500 to-blue-700';
+    return 'from-slate-300 to-slate-400';
+  };
+
+  return (
+    <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl shadow-sm border border-slate-100 group relative overflow-hidden transition-all hover:shadow-xl hover:-translate-y-1">
+      <div className={`absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b ${getStatusStyle()}`}></div>
+      <div className="flex justify-between items-start mb-3">
+        <h4 className={`font-black text-slate-800 text-lg leading-tight ${task.status === 'done' ? 'line-through opacity-40' : ''}`}>{task.title}</h4>
+        <button onClick={() => onDelete(task.id)} className="p-1.5 text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={16}/></button>
+      </div>
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          <span className="px-2 py-1 bg-slate-100 rounded-lg text-[9px] font-black uppercase text-slate-500 flex items-center gap-1"><User size={10}/> {task.assignee}</span>
+          {task.isWeekly && <span className="px-2 py-1 bg-blue-50 rounded-lg text-[9px] font-black uppercase text-blue-600 flex items-center gap-1"><RefreshCw size={10}/> Weekly</span>}
+        </div>
+        <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
+          <div className="flex items-center gap-1"><Calendar size={12}/> {task.dueDate || 'No Date'}</div>
+          <div className="italic text-[8px] opacity-60">Created by: {task.createdBy}</div>
+        </div>
+        {task.status === 'in_progress' && (
+          <div className="pt-2">
+            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mb-2">
+              <div className="h-full bg-blue-600 transition-all duration-500" style={{ width: `${task.progress}%` }}></div>
+            </div>
+            <div className="flex gap-1">
+              {[10, 50, 90].map(p => (
+                <button key={p} onClick={() => onProgress(task.id, p)} className={`flex-1 text-[8px] py-1 rounded-md font-black border transition-all ${task.progress === p ? 'bg-blue-600 text-white' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}>{p}%</button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="flex gap-2 pt-2">
+          {task.status !== 'todo' && <button onClick={() => onUpdate(task, task.status === 'done' ? 'in_progress' : 'todo')} className="p-2.5 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200"><X size={16}/></button>}
+          <button 
+            onClick={() => onUpdate(task, task.status === 'todo' ? 'in_progress' : 'done')}
+            className={`flex-1 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest text-white shadow-lg active:scale-95 ${task.status === 'todo' ? 'bg-blue-600' : task.status === 'done' ? 'bg-emerald-500 opacity-50' : 'bg-emerald-500'}`}
+          >
+            {task.status === 'todo' ? 'Engage' : task.status === 'done' ? 'Reopen' : 'Finish'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
