@@ -38,10 +38,11 @@
 
         .status-header { position: sticky; top: -12px; z-index: 30; }
 
-        /* Custom Slider Styling */
-        input[type=range] { -webkit-appearance: none; background: transparent; }
-        input[type=range]::-webkit-slider-runnable-track { background: rgba(0,0,0,0.1); height: 6px; border-radius: 3px; }
-        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%; background: #3b82f6; cursor: pointer; margin-top: -4px; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+        .progress-step {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .progress-step:hover { transform: scale(1.1); }
     </style>
 </head>
 <body class="bg-gray-100 font-sans text-slate-900">
@@ -154,17 +155,17 @@
                 } catch (err) { console.error(err); }
             };
 
-            const updateTaskProgress = async (task, progressValue) => {
+            const updateTaskProgress = async (task, value) => {
                 if (!checkPermission(task)) return;
-                const value = parseInt(progressValue);
                 let updates = { progress: value };
                 
-                // Tự động chuyển trạng thái nếu đạt 100% hoặc về 0%
                 if (value === 100 && task.status !== 'done') {
                     handleComplete(task);
                     return;
                 } else if (value > 0 && value < 100 && task.status !== 'in_progress') {
                     updates.status = 'in_progress';
+                } else if (value === 0 && task.status !== 'todo') {
+                    updates.status = 'todo';
                 }
                 
                 await collectionRef.doc(task.id).update(updates);
@@ -254,6 +255,7 @@
                                             {tasks.filter(t => t.status === status).map(task => {
                                                 const colors = ASSIGNEE_COLORS[task.assignee] || ASSIGNEE_COLORS.Default;
                                                 const deadlineNear = isDeadlineNear(task.dueDate) && status !== 'done';
+                                                const currentProgress = task.progress || 0;
                                                 return (
                                                     <div 
                                                         key={task.id} 
@@ -293,34 +295,39 @@
                                                             </div>
                                                         </div>
 
-                                                        {/* Chức năng set tiến độ */}
+                                                        {/* Chọn nấc tiến độ */}
                                                         {status === 'in_progress' && (
-                                                            <div className="mb-4 bg-black/5 p-2 rounded-xl border border-black/5">
-                                                                <div className="flex justify-between items-center mb-1.5">
-                                                                    <span className="text-[8px] font-black uppercase text-slate-500">Tiến độ công việc</span>
-                                                                    <span className="text-[10px] font-black text-blue-600 bg-white px-1.5 rounded shadow-sm">{task.progress || 0}%</span>
+                                                            <div className="mb-4 bg-black/5 p-2.5 rounded-xl border border-black/5">
+                                                                <div className="flex justify-between items-center mb-2">
+                                                                    <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider">Tiến độ công việc</span>
+                                                                    <span className="text-[10px] font-black text-blue-700 bg-white px-2 py-0.5 rounded shadow-sm border border-blue-100">{currentProgress}%</span>
                                                                 </div>
-                                                                <input 
-                                                                    type="range" 
-                                                                    min="0" max="100" step="10" 
-                                                                    value={task.progress || 0} 
-                                                                    onChange={(e) => updateTaskProgress(task, e.target.value)}
-                                                                    className="w-full h-1.5 accent-blue-600"
-                                                                />
-                                                                <div className="flex justify-between mt-1 text-[7px] font-bold text-slate-400">
-                                                                    <span>0%</span>
-                                                                    <span>50%</span>
-                                                                    <span>100%</span>
+                                                                <div className="flex gap-1 justify-between">
+                                                                    {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(val => (
+                                                                        <div 
+                                                                            key={val}
+                                                                            onClick={() => updateTaskProgress(task, val)}
+                                                                            className={`progress-step flex-1 h-5 rounded-sm flex items-center justify-center text-[7px] font-bold border cursor-pointer
+                                                                                ${val <= currentProgress 
+                                                                                    ? 'bg-blue-600 border-blue-700 text-white shadow-sm' 
+                                                                                    : 'bg-white/60 border-black/5 text-slate-400'
+                                                                                }
+                                                                                ${val === currentProgress ? 'ring-2 ring-blue-300 ring-offset-1' : ''}
+                                                                            `}
+                                                                        >
+                                                                            {val === 100 ? 'Fin' : val}
+                                                                        </div>
+                                                                    ))}
                                                                 </div>
                                                             </div>
                                                         )}
 
                                                         {/* Thanh hiển thị tiến độ cho Done hoặc Todo (nhỏ gọn) */}
                                                         {status !== 'in_progress' && (
-                                                            <div className="w-full h-1 bg-black/5 rounded-full mb-3 overflow-hidden">
+                                                            <div className="w-full h-1.5 bg-black/5 rounded-full mb-3 overflow-hidden border border-black/5">
                                                                 <div 
-                                                                    className={`h-full transition-all duration-500 ${status === 'done' ? 'bg-green-500' : 'bg-slate-300'}`} 
-                                                                    style={{ width: `${task.progress || 0}%` }}
+                                                                    className={`h-full transition-all duration-700 ${status === 'done' ? 'bg-green-500' : 'bg-blue-400'}`} 
+                                                                    style={{ width: `${currentProgress}%` }}
                                                                 ></div>
                                                             </div>
                                                         )}
