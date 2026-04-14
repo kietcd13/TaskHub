@@ -1,365 +1,141 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Plus, Clock, User, Calendar, CheckCircle2, Circle, Trash2, X, 
-  RefreshCw, LogOut, ShieldAlert, Zap, Ban, ChevronDown, 
-  LayoutDashboard, CalendarDays, ChevronLeft, ChevronRight
-} from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-<script src="https://cdn.tailwindcss.com"></script>
-// https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  base: '/TaskHub/', 
-})
-/**
- * HƯỚNG DẪN CHẠY TRÊN GITHUB / LOCAL:
- * 1. Tạo project: npm create vite@latest my-task-app -- --template react
- * 2. Cài đặt: npm install firebase lucide-react
- * 3. Copy toàn bộ code này vào App.jsx
- * 4. Điền thông tin Firebase của bạn vào LOCAL_FIREBASE_CONFIG bên dưới.
- * 5. Bật "Anonymous Auth" trong Firebase Console -> Authentication -> Sign-in method.
- */
-
-const LOCAL_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDyl2FoFZwKtFL6yb2sPEEWzJvBBzNK01A",
-  authDomain: "taskhub-c3f41.firebaseapp.com",
-  projectId: "taskhub-c3f41",
-  storageBucket: "taskhub-c3f41.firebasestorage.app",
-  messagingSenderId: "874827473111",
-  appId: "1:874827473111:web:cdbd7c6b8d5ece0d285092",
-  measurementId: "G-2EWMV1JJMK"
-};
-
-// Tự động chọn cấu hình phù hợp
-const firebaseConfig = typeof __firebase_config !== 'undefined' 
-  ? JSON.parse(__firebase_config) 
-  : LOCAL_FIREBASE_CONFIG;
-
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'github-deployment';
-
-// Khởi tạo Firebase an toàn
-let app, auth, db;
-try {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-} catch (error) {
-  console.error("Firebase init error. Check your LOCAL_FIREBASE_CONFIG:", error);
-}
-
-// Styling Constants
-const PRIMARY_GRADIENT = 'linear-gradient(135deg, #0060A9 0%, #003a66 100%)';
-const BACKGROUND_GRADIENT = 'linear-gradient(180deg, #F8FAFC 0%, #E2E8F0 100%)';
-
-const TEAM_MEMBERS = ["Kiet Vu", "Trung Pham", "Hung Pham", "Huy Tang"];
-
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [username, setUsername] = useState(() => localStorage.getItem('task_hub_username') || '');
-  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('task_hub_is_logged_in') === 'true');
-  const [viewMode, setViewMode] = useState('board'); 
-  const [calendarType, setCalendarType] = useState('month'); 
-  const [currentDate, setCurrentDate] = useState(new Date());
-  
-  const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(true);
-  
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskAssignee, setNewTaskAssignee] = useState(TEAM_MEMBERS[0]);
-  const [newTaskDueDate, setNewTaskDueDate] = useState('');
-  const [isWeekly, setIsWeekly] = useState(false);
-
-  // --- Auth Logic ---
-  useEffect(() => {
-    if (!auth) return;
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          // Khi chạy trên GitHub/Local, sử dụng đăng nhập ẩn danh
-          await signInAnonymously(auth);
-        }
-      } catch (err) { 
-        console.error("Auth failed:", err); 
-      }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      if (!currentUser) setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // --- Real-time Data ---
-  useEffect(() => {
-    if (!user || !db || !isLoggedIn) return;
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Task Hub</title>
     
-    // Đường dẫn tuân thủ cấu trúc dữ liệu của môi trường
-    const collectionPath = `artifacts/${appId}/public/data/team_tasks`;
-    const tasksCollectionRef = collection(db, collectionPath);
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
     
-    const unsubscribe = onSnapshot(tasksCollectionRef, 
-      (snapshot) => {
-        const fetchedTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        fetchedTasks.sort((a, b) => b.createdAt - a.createdAt);
-        setTasks(fetchedTasks);
-        setLoading(false);
-      },
-      (err) => { 
-        console.error("Firestore access error:", err);
-        setLoading(false); 
-      }
-    );
-    return () => unsubscribe();
-  }, [user, isLoggedIn]);
-
-  // --- Handlers ---
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (username.trim()) {
-      localStorage.setItem('task_hub_username', username.trim());
-      localStorage.setItem('task_hub_is_logged_in', 'true');
-      setIsLoggedIn(true);
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('task_hub_username');
-    localStorage.removeItem('task_hub_is_logged_in');
-    setIsLoggedIn(false);
-    setUsername('');
-  };
-
-  const handleAddTask = async (e) => {
-    e.preventDefault();
-    if (!newTaskTitle.trim() || !user || !db) return;
-    const collectionPath = `artifacts/${appId}/public/data/team_tasks`;
-    try {
-      await addDoc(collection(db, collectionPath), {
-        title: newTaskTitle,
-        assignee: newTaskAssignee,
-        dueDate: newTaskDueDate,
-        isWeekly: isWeekly,
-        status: 'todo',
-        progress: 0,
-        createdAt: Date.now(),
-        createdBy: username,
-        creatorUid: user.uid
-      });
-      setNewTaskTitle(''); 
-      setIsModalOpen(false);
-    } catch (err) { console.error("Error adding task:", err); }
-  };
-
-  const updateTaskStatus = async (task, newStatus) => {
-    if (!user || !db) return;
-    const docPath = `artifacts/${appId}/public/data/team_tasks/${task.id}`;
-    let progress = newStatus === 'done' ? 100 : (newStatus === 'todo' ? 0 : 10);
-    try {
-      await updateDoc(doc(db, docPath), { status: newStatus, progress, completedAt: newStatus === 'done' ? Date.now() : null });
-      if (newStatus === 'done' && task.isWeekly) {
-        const nextDueDate = task.dueDate ? new Date(task.dueDate) : new Date();
-        if (task.dueDate) nextDueDate.setDate(nextDueDate.getDate() + 7);
-        const collectionPath = `artifacts/${appId}/public/data/team_tasks`;
-        await addDoc(collection(db, collectionPath), {
-          ...task,
-          id: undefined,
-          dueDate: nextDueDate.toISOString().split('T')[0],
-          status: 'todo',
-          progress: 0,
-          createdAt: Date.now(),
-          completedAt: null
-        });
-      }
-    } catch (err) { console.error(err); }
-  };
-
-  const deleteTask = async (taskId) => {
-    if (!user || !db) return;
-    const docPath = `artifacts/${appId}/public/data/team_tasks/${taskId}`;
-    try { await deleteDoc(doc(db, docPath)); } catch (err) { console.error(err); }
-  };
-
-  // --- View Computations ---
-  const calendarDays = useMemo(() => {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
+    <!-- React & Babel (Để trình duyệt đọc được JSX trực tiếp) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    if (calendarType === 'month') {
-      const firstDayOfMonth = new Date(year, month, 1).getDay();
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-      const days = [];
-      const prevMonthLastDay = new Date(year, month, 0).getDate();
-      for (let i = firstDayOfMonth - 1; i >= 0; i--) {
-        days.push({ day: prevMonthLastDay - i, month: month - 1, year, current: false });
-      }
-      for (let i = 1; i <= daysInMonth; i++) {
-        days.push({ day: i, month, year, current: true });
-      }
-      const remaining = 42 - days.length;
-      for (let i = 1; i <= remaining; i++) {
-        days.push({ day: i, month: month + 1, year, current: false });
-      }
-      return days;
-    } else {
-      const startOfWeek = new Date(currentDate);
-      startOfWeek.setDate(currentDate.getDate() - currentDate.getDay());
-      const days = [];
-      for (let i = 0; i < 7; i++) {
-        const d = new Date(startOfWeek);
-        d.setDate(startOfWeek.getDate() + i);
-        days.push({ day: d.getDate(), month: d.getMonth(), year: d.getFullYear(), current: true });
-      }
-      return days;
-    }
-  }, [currentDate, calendarType]);
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-slate-100">
+    <div id="root"></div>
 
-  if (!isLoggedIn) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-slate-100">
-        <div className="bg-white p-10 rounded-3xl shadow-xl w-full max-w-md border border-slate-200">
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: PRIMARY_GRADIENT }}>
-              <Zap size={32} className="text-white" />
-            </div>
-            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Task Hub Login</h2>
-          </div>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <input required type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Nhập tên của bạn" className="w-full px-5 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl focus:border-blue-500 outline-none font-bold" />
-            <button type="submit" className="w-full py-3 text-white rounded-xl font-black uppercase tracking-widest transition-all hover:opacity-90" style={{ background: PRIMARY_GRADIENT }}>Bắt đầu</button>
-          </form>
-        </div>
-      </div>
-    );
-  }
+    <script type="text/babel">
+        // Firebase Imports từ CDN (phiên bản ESM)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-  return (
-    <div className="min-h-screen font-sans pb-10" style={{ background: BACKGROUND_GRADIENT }}>
-      <header className="sticky top-0 z-30 shadow-lg px-6 py-4 flex justify-between items-center text-white" style={{ background: PRIMARY_GRADIENT }}>
-        <div className="flex items-center gap-6">
-          <h1 className="text-xl font-black uppercase">Task Hub</h1>
-          <div className="flex bg-white/10 p-1 rounded-lg">
-            <button onClick={() => setViewMode('board')} className={`px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all ${viewMode === 'board' ? 'bg-white text-blue-900' : 'text-white/70'}`}>Board</button>
-            <button onClick={() => setViewMode('calendar')} className={`px-4 py-1.5 rounded-md text-[10px] font-bold uppercase transition-all ${viewMode === 'calendar' ? 'bg-white text-blue-900' : 'text-white/70'}`}>Calendar</button>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="text-[10px] font-bold uppercase bg-white/20 px-3 py-1.5 rounded-lg">{username}</span>
-          <button onClick={() => setIsModalOpen(true)} className="bg-white text-blue-900 px-4 py-1.5 rounded-lg font-bold text-[10px] uppercase hover:scale-105 transition-all">New Task</button>
-          <button onClick={handleLogout} className="p-2 bg-black/10 rounded-lg hover:bg-black/20"><LogOut size={16}/></button>
-        </div>
-      </header>
+        const { useState, useEffect, useMemo } = React;
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        {viewMode === 'board' ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {['todo', 'in_progress', 'done'].map(status => (
-              <div key={status} className="space-y-4">
-                <h3 className="font-black text-[10px] uppercase tracking-widest text-slate-400 px-2">{status.replace('_', ' ')}</h3>
-                <div className="space-y-4">
-                  {tasks.filter(t => t.status === status).map(task => (
-                    <TaskCard key={task.id} task={task} onUpdate={updateTaskStatus} onDelete={deleteTask} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-200">
-            <div className="p-6 border-b flex justify-between items-center bg-slate-50">
-              <div className="flex items-center gap-4">
-                <div className="flex bg-white p-1 rounded-lg border">
-                  <button onClick={() => setCalendarType('month')} className={`px-3 py-1 rounded-md text-[9px] font-bold uppercase ${calendarType === 'month' ? 'bg-blue-600 text-white' : 'text-slate-400'}`}>Tháng</button>
-                  <button onClick={() => setCalendarType('week')} className={`px-3 py-1 rounded-md text-[9px] font-bold uppercase ${calendarType === 'week' ? 'bg-blue-600 text-white' : 'text-slate-400'}`}>Tuần</button>
-                </div>
-                <h2 className="font-black text-slate-800 uppercase text-sm">{currentDate.toLocaleString('vi-VN', { month: 'long', year: 'numeric' })}</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => changeDate(-1)} className="p-2 border rounded-lg hover:bg-white"><ChevronLeft size={16}/></button>
-                <button onClick={() => setCurrentDate(new Date())} className="px-4 py-2 border rounded-lg text-[9px] font-bold uppercase">Hôm nay</button>
-                <button onClick={() => changeDate(1)} className="p-2 border rounded-lg hover:bg-white"><ChevronRight size={16}/></button>
-              </div>
-            </div>
-            <div className="grid grid-cols-7 bg-slate-100/50">
-              {['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'].map(d => <div key={d} className="py-2 text-center text-[9px] font-bold text-slate-400">{d}</div>)}
-            </div>
-            <div className="grid grid-cols-7">
-              {calendarDays.map((d, i) => {
-                const dateKey = `${d.year}-${String(d.month + 1).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`;
-                const dayTasks = tasks.filter(t => t.dueDate === dateKey);
+        const LOCAL_FIREBASE_CONFIG = {
+            apiKey: "AIzaSyDyl2FoFZwKtFL6yb2sPEEWzJvBBzNK01A",
+            authDomain: "taskhub-c3f41.firebaseapp.com",
+            projectId: "taskhub-c3f41",
+            storageBucket: "taskhub-c3f41.firebasestorage.app",
+            messagingSenderId: "874827473111",
+            appId: "1:874827473111:web:cdbd7c6b8d5ece0d285092",
+            measurementId: "G-2EWMV1JJMK"
+        };
+
+        const app = initializeApp(LOCAL_FIREBASE_CONFIG);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = 'github-deployment';
+
+        function App() {
+            const [user, setUser] = useState(null);
+            const [username, setUsername] = useState(() => localStorage.getItem('task_hub_username') || '');
+            const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('task_hub_is_logged_in') === 'true');
+            const [tasks, setTasks] = useState([]);
+            const [viewMode, setViewMode] = useState('board');
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [newTaskTitle, setNewTaskTitle] = useState('');
+
+            useEffect(() => {
+                signInAnonymously(auth).catch(console.error);
+                return onAuthStateChanged(auth, setUser);
+            }, []);
+
+            useEffect(() => {
+                if (!user || !isLoggedIn) return;
+                const path = `artifacts/${appId}/public/data/team_tasks`;
+                return onSnapshot(collection(db, path), (snapshot) => {
+                    const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    setTasks(data.sort((a, b) => b.createdAt - a.createdAt));
+                });
+            }, [user, isLoggedIn]);
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (username.trim()) {
+                    localStorage.setItem('task_hub_username', username);
+                    localStorage.setItem('task_hub_is_logged_in', 'true');
+                    setIsLoggedIn(true);
+                }
+            };
+
+            if (!isLoggedIn) {
                 return (
-                  <div key={i} className={`min-h-[120px] border-r border-b p-2 ${!d.current ? 'bg-slate-50 opacity-40' : ''}`}>
-                    <span className="text-[10px] font-bold text-slate-400">{d.day}</span>
-                    <div className="mt-1 space-y-1">
-                      {dayTasks.map(t => (
-                        <div key={t.id} className={`text-[8px] p-1 rounded border-l-2 truncate ${t.assignee === username ? 'bg-blue-50 border-blue-600 text-blue-900' : 'bg-slate-100 border-slate-300 text-slate-600'}`}>
-                          {t.title}
+                    <div className="min-h-screen flex items-center justify-center p-4">
+                        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm text-center">
+                            <h2 className="text-2xl font-bold mb-6">Task Hub Login</h2>
+                            <form onSubmit={handleLogin} className="space-y-4">
+                                <input required type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Tên của bạn" className="w-full p-3 border rounded-xl" />
+                                <button className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">Bắt đầu</button>
+                            </form>
                         </div>
-                      ))}
                     </div>
-                  </div>
                 );
-              })}
-            </div>
-          </div>
-        )}
-      </main>
+            }
 
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="p-6 border-b flex justify-between items-center">
-              <h3 className="font-black uppercase text-xs">Thêm Task Mới</h3>
-              <button onClick={() => setIsModalOpen(false)}><X size={20}/></button>
-            </div>
-            <form onSubmit={handleAddTask} className="p-6 space-y-4">
-              <input required value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="Tên công việc..." className="w-full p-3 bg-slate-50 border rounded-xl font-bold" />
-              <div className="grid grid-cols-2 gap-3">
-                <select value={newTaskAssignee} onChange={(e) => setNewTaskAssignee(e.target.value)} className="p-3 bg-slate-50 border rounded-xl font-bold text-xs">
-                  {TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-                <input required type="date" value={newTaskDueDate} onChange={(e) => setNewTaskDueDate(e.target.value)} className="p-3 bg-slate-50 border rounded-xl font-bold text-xs" />
-              </div>
-              <label className="flex items-center gap-2 p-3 bg-blue-50 rounded-xl cursor-pointer">
-                <input type="checkbox" checked={isWeekly} onChange={() => setIsWeekly(!isWeekly)} />
-                <span className="text-[10px] font-bold uppercase text-blue-900">Lặp lại hàng tuần</span>
-              </label>
-              <button type="submit" className="w-full py-3 text-white rounded-xl font-black uppercase" style={{ background: PRIMARY_GRADIENT }}>Tạo Task</button>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+            return (
+                <div className="min-h-screen pb-10">
+                    <header className="bg-blue-700 p-4 text-white flex justify-between items-center shadow-md">
+                        <h1 className="font-bold uppercase tracking-wider">Task Hub</h1>
+                        <button onClick={() => setIsModalOpen(true)} className="bg-white text-blue-700 px-4 py-2 rounded-lg font-bold text-sm">Thêm Task</button>
+                    </header>
+                    
+                    <main className="max-w-6xl mx-auto p-6">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {['todo', 'in_progress', 'done'].map(status => (
+                                <div key={status} className="bg-slate-200/50 p-4 rounded-xl min-h-[300px]">
+                                    <h3 className="font-bold text-slate-500 uppercase text-xs mb-4">{status}</h3>
+                                    {tasks.filter(t => t.status === status).map(task => (
+                                        <div key={task.id} className="bg-white p-4 rounded-lg shadow-sm mb-3">
+                                            <p className="font-bold">{task.title}</p>
+                                            <p className="text-xs text-slate-400 mt-1">Giao cho: {task.assignee}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    </main>
 
-function TaskCard({ task, onUpdate, onDelete }) {
-  return (
-    <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 group">
-      <div className="flex justify-between mb-2">
-        <h4 className={`font-bold text-slate-800 ${task.status === 'done' ? 'line-through opacity-40' : ''}`}>{task.title}</h4>
-        <button onClick={() => onDelete(task.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={14}/></button>
-      </div>
-      <div className="flex gap-2 mb-3">
-        <span className="text-[8px] font-bold uppercase bg-slate-100 px-2 py-1 rounded text-slate-500">{task.assignee}</span>
-        <span className="text-[8px] font-bold uppercase bg-slate-100 px-2 py-1 rounded text-slate-500">{task.dueDate}</span>
-      </div>
-      <div className="flex gap-2">
-        {task.status !== 'todo' && <button onClick={() => onUpdate(task, 'todo')} className="p-2 bg-slate-50 rounded-lg hover:bg-slate-100"><X size={14}/></button>}
-        <button 
-          onClick={() => onUpdate(task, task.status === 'todo' ? 'in_progress' : 'done')}
-          className="flex-1 py-1.5 rounded-lg font-bold text-[9px] uppercase bg-blue-600 text-white hover:bg-blue-700"
-        >
-          {task.status === 'todo' ? 'Bắt đầu' : task.status === 'done' ? 'Mở lại' : 'Hoàn thành'}
-        </button>
-      </div>
-    </div>
-  );
-}
+                    {isModalOpen && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
+                            <div className="bg-white p-6 rounded-2xl w-full max-w-md">
+                                <h3 className="font-bold mb-4">Task mới</h3>
+                                <input className="w-full p-2 border rounded mb-4" placeholder="Tên việc..." value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} />
+                                <button onClick={async () => {
+                                    const path = `artifacts/${appId}/public/data/team_tasks`;
+                                    await addDoc(collection(db, path), {
+                                        title: newTaskTitle,
+                                        assignee: username,
+                                        status: 'todo',
+                                        createdAt: Date.now()
+                                    });
+                                    setIsModalOpen(false);
+                                    setNewTaskTitle('');
+                                }} className="w-full py-2 bg-blue-600 text-white rounded">Lưu</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
