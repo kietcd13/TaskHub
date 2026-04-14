@@ -8,26 +8,22 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- React & Babel (Để trình duyệt đọc được JSX trực tiếp) -->
+    <!-- React & Babel -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Firebase App & Firestore (Dùng bản Compat để chạy trực tiếp trên Browser không cần build) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 </head>
-<body class="bg-slate-100">
+<body class="bg-slate-50">
     <div id="root"></div>
 
     <script type="text/babel">
-        // Firebase Imports từ CDN (phiên bản ESM)
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-        const { useState, useEffect, useMemo } = React;
-
-        const LOCAL_FIREBASE_CONFIG = {
+        // Cấu hình Firebase của bạn
+        const firebaseConfig = {
             apiKey: "AIzaSyDyl2FoFZwKtFL6yb2sPEEWzJvBBzNK01A",
             authDomain: "taskhub-c3f41.firebaseapp.com",
             projectId: "taskhub-c3f41",
@@ -37,32 +33,49 @@
             measurementId: "G-2EWMV1JJMK"
         };
 
-        const app = initializeApp(LOCAL_FIREBASE_CONFIG);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = 'github-deployment';
+        // Khởi tạo Firebase bản Compat
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const appId = 'github-deployment'; // ID để phân biệt dữ liệu
+
+        const { useState, useEffect } = React;
 
         function App() {
             const [user, setUser] = useState(null);
             const [username, setUsername] = useState(() => localStorage.getItem('task_hub_username') || '');
             const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('task_hub_is_logged_in') === 'true');
             const [tasks, setTasks] = useState([]);
-            const [viewMode, setViewMode] = useState('board');
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [newTaskTitle, setNewTaskTitle] = useState('');
+            const [loading, setLoading] = useState(true);
 
+            // Xử lý Đăng nhập ẩn danh
             useEffect(() => {
-                signInAnonymously(auth).catch(console.error);
-                return onAuthStateChanged(auth, setUser);
+                auth.signInAnonymously().catch(err => console.error("Lỗi Auth:", err));
+                const unsubscribe = auth.onAuthStateChanged((u) => {
+                    setUser(u);
+                });
+                return () => unsubscribe();
             }, []);
 
+            // Lấy dữ liệu Real-time
             useEffect(() => {
                 if (!user || !isLoggedIn) return;
+                
                 const path = `artifacts/${appId}/public/data/team_tasks`;
-                return onSnapshot(collection(db, path), (snapshot) => {
-                    const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    setTasks(data.sort((a, b) => b.createdAt - a.createdAt));
-                });
+                const unsubscribe = db.collection(path)
+                    .orderBy("createdAt", "desc")
+                    .onSnapshot((snapshot) => {
+                        const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        setTasks(data);
+                        setLoading(false);
+                    }, (err) => {
+                        console.error("Lỗi Firestore:", err);
+                        setLoading(false);
+                    });
+                
+                return () => unsubscribe();
             }, [user, isLoggedIn]);
 
             const handleLogin = (e) => {
@@ -74,14 +87,45 @@
                 }
             };
 
+            const handleLogout = () => {
+                localStorage.clear();
+                window.location.reload();
+            };
+
+            const addTask = async () => {
+                if (!newTaskTitle.trim()) return;
+                const path = `artifacts/${appId}/public/data/team_tasks`;
+                await db.collection(path).add({
+                    title: newTaskTitle,
+                    assignee: username,
+                    status: 'todo',
+                    createdAt: Date.now()
+                });
+                setNewTaskTitle('');
+                setIsModalOpen(false);
+            };
+
+            const updateStatus = async (id, newStatus) => {
+                const path = `artifacts/${appId}/public/data/team_tasks`;
+                await db.collection(path).doc(id).update({ status: newStatus });
+            };
+
+            const deleteTask = async (id) => {
+                const path = `artifacts/${appId}/public/data/team_tasks`;
+                await db.collection(path).doc(id).delete();
+            };
+
             if (!isLoggedIn) {
                 return (
-                    <div className="min-h-screen flex items-center justify-center p-4">
-                        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm text-center">
-                            <h2 className="text-2xl font-bold mb-6">Task Hub Login</h2>
+                    <div className="min-h-screen flex items-center justify-center bg-blue-600 p-4">
+                        <div className="bg-white p-10 rounded-3xl shadow-2xl w-full max-w-md text-center">
+                            <h2 className="text-3xl font-black text-slate-800 uppercase mb-2">Task Hub</h2>
+                            <p className="text-slate-400 mb-8 font-medium">Hệ thống quản lý công việc nhóm</p>
                             <form onSubmit={handleLogin} className="space-y-4">
-                                <input required type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Tên của bạn" className="w-full p-3 border rounded-xl" />
-                                <button className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">Bắt đầu</button>
+                                <input required type="text" value={username} onChange={e => setUsername(e.target.value)} 
+                                    placeholder="Nhập tên của bạn..." 
+                                    className="w-full px-5 py-4 bg-slate-100 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none" />
+                                <button className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-200">Bắt đầu ngay</button>
                             </form>
                         </div>
                     </div>
@@ -89,44 +133,62 @@
             }
 
             return (
-                <div className="min-h-screen pb-10">
-                    <header className="bg-blue-700 p-4 text-white flex justify-between items-center shadow-md">
-                        <h1 className="font-bold uppercase tracking-wider">Task Hub</h1>
-                        <button onClick={() => setIsModalOpen(true)} className="bg-white text-blue-700 px-4 py-2 rounded-lg font-bold text-sm">Thêm Task</button>
+                <div className="min-h-screen">
+                    <header className="bg-white border-b px-8 py-4 flex justify-between items-center sticky top-0 z-10">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-black">T</div>
+                            <h1 className="font-black text-xl uppercase tracking-tighter text-slate-800">Task Hub</h1>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <span className="text-xs font-bold px-4 py-2 bg-slate-100 rounded-full text-slate-600">Xin chào, {username}</span>
+                            <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-blue-700 shadow-md">Thêm Task</button>
+                            <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 transition-colors">Đăng xuất</button>
+                        </div>
                     </header>
-                    
-                    <main className="max-w-6xl mx-auto p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {['todo', 'in_progress', 'done'].map(status => (
-                                <div key={status} className="bg-slate-200/50 p-4 rounded-xl min-h-[300px]">
-                                    <h3 className="font-bold text-slate-500 uppercase text-xs mb-4">{status}</h3>
-                                    {tasks.filter(t => t.status === status).map(task => (
-                                        <div key={task.id} className="bg-white p-4 rounded-lg shadow-sm mb-3">
-                                            <p className="font-bold">{task.title}</p>
-                                            <p className="text-xs text-slate-400 mt-1">Giao cho: {task.assignee}</p>
-                                        </div>
-                                    ))}
+
+                    <main className="max-w-7xl mx-auto p-8">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                            {['todo', 'in_progress', 'done'].map(colStatus => (
+                                <div key={colStatus} className="flex flex-col gap-4">
+                                    <h3 className="font-black text-[11px] uppercase tracking-[0.2em] text-slate-400 px-2">
+                                        {colStatus === 'todo' ? 'Cần làm' : colStatus === 'in_progress' ? 'Đang chạy' : 'Hoàn thành'} ({tasks.filter(t => t.status === colStatus).length})
+                                    </h3>
+                                    <div className="flex flex-col gap-4">
+                                        {tasks.filter(t => t.status === colStatus).map(task => (
+                                            <div key={task.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow group">
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <p className={`font-bold text-slate-800 ${task.status === 'done' ? 'line-through text-slate-300' : ''}`}>{task.title}</p>
+                                                    <button onClick={() => deleteTask(task.id)} className="text-slate-200 hover:text-red-500 transition-colors">✕</button>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">{task.assignee}</span>
+                                                    <div className="flex gap-1">
+                                                        {task.status !== 'todo' && <button onClick={() => updateStatus(task.id, 'todo')} className="text-[10px] font-bold p-1 text-slate-300 hover:text-slate-600">Re-open</button>}
+                                                        {task.status !== 'done' && <button onClick={() => updateStatus(task.id, task.status === 'todo' ? 'in_progress' : 'done')} className="text-[10px] font-bold bg-slate-800 text-white px-3 py-1 rounded-lg">Tiếp tục</button>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             ))}
                         </div>
                     </main>
 
                     {isModalOpen && (
-                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
-                            <div className="bg-white p-6 rounded-2xl w-full max-w-md">
-                                <h3 className="font-bold mb-4">Task mới</h3>
-                                <input className="w-full p-2 border rounded mb-4" placeholder="Tên việc..." value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} />
-                                <button onClick={async () => {
-                                    const path = `artifacts/${appId}/public/data/team_tasks`;
-                                    await addDoc(collection(db, path), {
-                                        title: newTaskTitle,
-                                        assignee: username,
-                                        status: 'todo',
-                                        createdAt: Date.now()
-                                    });
-                                    setIsModalOpen(false);
-                                    setNewTaskTitle('');
-                                }} className="w-full py-2 bg-blue-600 text-white rounded">Lưu</button>
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                            <div className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl">
+                                <h3 className="font-black text-xl mb-6 uppercase">Tạo công việc mới</h3>
+                                <input autoFocus className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl font-bold mb-6 outline-none focus:ring-2 focus:ring-blue-500" 
+                                    placeholder="Bạn cần làm gì?" 
+                                    value={newTaskTitle} 
+                                    onChange={e => setNewTaskTitle(e.target.value)} 
+                                    onKeyPress={e => e.key === 'Enter' && addTask()}
+                                />
+                                <div className="flex gap-3">
+                                    <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-bold text-slate-400">Hủy</button>
+                                    <button onClick={addTask} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-lg shadow-blue-100">Lưu Task</button>
+                                </div>
                             </div>
                         </div>
                     )}
