@@ -18,13 +18,28 @@
         .bg-done { background: linear-gradient(to right, #00b09b, #96c93d); }
         .bg-header { background: linear-gradient(to right, #232526, #414345); }
         
-        /* Đã bỏ hiệu ứng deadline-danger viền đỏ */
-        
-        .task-list { max-height: calc(100vh - 250px); overflow-y: auto; padding-right: 4px; }
+        /* Tăng không gian phía trên để tránh bị che tag */
+        .task-list { 
+            max-height: calc(100vh - 250px); 
+            overflow-y: auto; 
+            padding-right: 4px; 
+            padding-top: 24px; 
+        }
         .task-list::-webkit-scrollbar { width: 4px; }
         .task-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
 
-        .task-card:hover { transform: translateY(-2px); transition: all 0.2s ease; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+        .task-card { transition: all 0.2s ease; }
+        .task-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px -2px rgb(0 0 0 / 0.15); }
+        
+        /* Animation cho các tag cảnh báo */
+        @keyframes subtle-bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-4px); }
+        }
+        .animate-tag { animation: subtle-bounce 2s infinite ease-in-out; }
+
+        /* Đảm bảo thanh tiêu đề trạng thái luôn ở trên cùng nhưng không che tag khi cuộn */
+        .status-header { position: sticky; top: -12px; z-index: 30; }
     </style>
 </head>
 <body class="bg-gray-100 font-sans text-slate-900">
@@ -46,13 +61,12 @@
         
         const TEAM_MEMBERS = ["Kiet Vu", "Trung Pham", "Hung Pham", "Huy Tang"];
         
-        // Bảng màu Pastel mở rộng để phân biệt rõ ràng giữa các thành viên
         const ASSIGNEE_COLORS = {
-            "Kiet Vu": { bg: "#E0F2FE", text: "#0369a1", border: "#bae6fd" },    // Blue
-            "Trung Pham": { bg: "#FEF3C7", text: "#92400e", border: "#fde68a" }, // Amber/Orange
-            "Hung Pham": { bg: "#DCFCE7", text: "#166534", border: "#bbf7d0" },  // Green
-            "Huy Tang": { bg: "#F3E8FF", text: "#6b21a8", border: "#e9d5ff" },   // Purple
-            "Admin": { bg: "#FFE4E6", text: "#9f1239", border: "#fecdd3" },     // Rose
+            "Kiet Vu": { bg: "#E0F2FE", text: "#0369a1", border: "#bae6fd" },
+            "Trung Pham": { bg: "#FEF3C7", text: "#92400e", border: "#fde68a" },
+            "Hung Pham": { bg: "#DCFCE7", text: "#166534", border: "#bbf7d0" },
+            "Huy Tang": { bg: "#F3E8FF", text: "#6b21a8", border: "#e9d5ff" },
+            "Admin": { bg: "#FFE4E6", text: "#9f1239", border: "#fecdd3" },
             "Default": { bg: "#F8FAFC", text: "#475569", border: "#e2e8f0" }
         };
 
@@ -67,7 +81,6 @@
             const [tasks, setTasks] = useState([]);
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [view, setView] = useState('board');
-            const [errorMsg, setErrorMsg] = useState('');
             
             const [newTitle, setNewTitle] = useState('');
             const [newAssignee, setNewAssignee] = useState(TEAM_MEMBERS[0]);
@@ -80,17 +93,9 @@
                 const initAuth = async () => {
                     try {
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            try {
-                                await auth.signInWithCustomToken(__initial_auth_token);
-                            } catch (tokenErr) {
-                                await auth.signInAnonymously();
-                            }
-                        } else {
-                            await auth.signInAnonymously();
-                        }
-                    } catch (err) {
-                        setErrorMsg("Lỗi xác thực hệ thống.");
-                    }
+                            try { await auth.signInWithCustomToken(__initial_auth_token); } catch (tErr) { await auth.signInAnonymously(); }
+                        } else { await auth.signInAnonymously(); }
+                    } catch (err) {}
                 };
                 initAuth();
                 const unsubscribe = auth.onAuthStateChanged((u) => setUser(u));
@@ -99,32 +104,25 @@
 
             useEffect(() => {
                 if (!user || !isLoggedIn) return;
-                const unsubscribe = collectionRef.onSnapshot(
-                    (snapshot) => {
-                        const now = Date.now();
-                        const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-                        const allTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        const filtered = allTasks.filter(task => {
-                            if (task.status === 'done' && task.completedAt) {
-                                return (now - task.completedAt) < threeDaysMs;
-                            }
-                            return task.status !== 'cancelled';
-                        });
-                        filtered.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
-                        setTasks(filtered);
-                    },
-                    (err) => setErrorMsg("Không thể tải dữ liệu: " + err.message)
-                );
+                const unsubscribe = collectionRef.onSnapshot((snapshot) => {
+                    const now = Date.now();
+                    const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+                    const allTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    const filtered = allTasks.filter(task => {
+                        if (task.status === 'done' && task.completedAt) return (now - task.completedAt) < threeDaysMs;
+                        return task.status !== 'cancelled';
+                    });
+                    filtered.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+                    setTasks(filtered);
+                });
                 return () => unsubscribe();
             }, [user, isLoggedIn]);
 
             useEffect(() => { if (window.lucide) window.lucide.createIcons(); });
 
             const checkPermission = (task) => {
-                const isCreator = task.createdBy === username;
-                const isAssignee = task.assignee === username;
-                if (!isCreator && !isAssignee) {
-                    alert(`Từ chối: Chỉ ${task.createdBy} (người tạo) hoặc ${task.assignee} (người thực hiện) mới có quyền chỉnh sửa task này.`);
+                if (task.createdBy !== username && task.assignee !== username) {
+                    alert(`Từ chối: Bạn không có quyền chỉnh sửa task này.`);
                     return false;
                 }
                 return true;
@@ -146,17 +144,11 @@
                 if (!newTitle || !newDueDate) return alert("Vui lòng điền đủ thông tin.");
                 try {
                     await collectionRef.add({
-                        title: newTitle,
-                        assignee: newAssignee,
-                        dueDate: newDueDate,
-                        isWeekly: isWeekly,
-                        status: 'todo',
-                        progress: 0,
-                        createdAt: Date.now(),
-                        createdBy: username
+                        title: newTitle, assignee: newAssignee, dueDate: newDueDate,
+                        isWeekly: isWeekly, status: 'todo', progress: 0,
+                        createdAt: Date.now(), createdBy: username
                     });
-                    setNewTitle('');
-                    setIsModalOpen(false);
+                    setNewTitle(''); setIsModalOpen(false);
                 } catch (err) { console.error(err); }
             };
 
@@ -174,47 +166,32 @@
                             dueDate: nextWeek.toISOString().split('T')[0], completedAt: null
                         });
                     }
-                } else if (newStatus === 'todo') {
-                    updates.progress = 0;
+                } else {
                     updates.completedAt = null;
-                } else if (newStatus === 'in_progress') {
-                    updates.completedAt = null;
+                    updates.progress = newStatus === 'todo' ? 0 : 10;
                 }
-                try {
-                    await collectionRef.doc(task.id).update(updates);
-                } catch (err) { console.error(err); }
+                await collectionRef.doc(task.id).update(updates);
             };
 
             const deleteTask = async (task) => {
                 if (!checkPermission(task)) return;
-                try {
-                    await collectionRef.doc(task.id).update({ status: 'cancelled' });
-                } catch (err) { console.error(err); }
-            };
-
-            const updateProgress = async (task, lv) => {
-                if (!checkPermission(task)) return;
-                try {
-                    await collectionRef.doc(task.id).update({ progress: lv });
-                } catch (err) { console.error(err); }
+                await collectionRef.doc(task.id).update({ status: 'cancelled' });
             };
 
             const isDeadlineNear = (dateStr) => {
                 if (!dateStr) return false;
                 const diff = (new Date(dateStr) - new Date()) / (1000 * 60 * 60 * 24);
-                return diff >= 0 && diff <= 2;
+                return diff >= -1 && diff <= 2;
             };
 
             if (!isLoggedIn) {
                 return (
-                    <div className="min-h-screen flex items-center justify-center bg-header p-4 text-white">
-                        <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-slate-800 text-center">
+                    <div className="min-h-screen flex items-center justify-center bg-header p-4 text-white text-center">
+                        <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-slate-800">
                             <h2 className="text-2xl font-black mb-6 uppercase tracking-tighter">Xác minh danh tính</h2>
                             <div className="grid gap-3">
                                 {TEAM_MEMBERS.map(m => (
-                                    <button key={m} onClick={() => handleLogin(m)} className="py-4 border-2 border-slate-100 rounded-2xl font-bold hover:bg-blue-600 hover:text-white transition-all">
-                                        {m}
-                                    </button>
+                                    <button key={m} onClick={() => handleLogin(m)} className="py-4 border-2 border-slate-100 rounded-2xl font-bold hover:bg-blue-600 hover:text-white transition-all">{m}</button>
                                 ))}
                             </div>
                         </div>
@@ -224,7 +201,7 @@
 
             return (
                 <div className="min-h-screen flex flex-col relative max-h-screen overflow-hidden">
-                    <header className="bg-header text-white px-6 py-4 flex justify-between items-center shadow-xl z-10">
+                    <header className="bg-header text-white px-6 py-4 flex justify-between items-center shadow-xl z-50">
                         <div className="flex items-center gap-3">
                             <div className="bg-white/20 p-2 rounded-lg"><i data-lucide="layers" className="w-5 h-5"></i></div>
                             <h1 className="text-lg font-black tracking-tighter uppercase">Task Hub Pro</h1>
@@ -242,27 +219,43 @@
 
                     <main className="flex-1 p-6 overflow-hidden">
                         {view === 'board' ? (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-full">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
                                 {['todo', 'in_progress', 'done'].map(status => (
                                     <div key={status} className="flex flex-col gap-3 h-full overflow-hidden">
-                                        <div className={`py-2 rounded-xl text-white font-black uppercase tracking-widest text-[10px] text-center shadow-md ${status==='todo'?'bg-todo':status==='in_progress'?'bg-progress':'bg-done'}`}>
+                                        <div className={`status-header py-2 rounded-xl text-white font-black uppercase tracking-widest text-[10px] text-center shadow-md ${status==='todo'?'bg-todo':status==='in_progress'?'bg-progress':'bg-done'}`}>
                                             {status === 'todo' ? 'Cần làm' : status === 'in_progress' ? 'Đang thực hiện' : 'Hoàn thành'}
                                         </div>
-                                        <div className="task-list flex flex-col gap-3 pb-10">
+                                        <div className="task-list flex flex-col gap-5 pb-10">
                                             {tasks.filter(t => t.status === status).map(task => {
                                                 const colors = ASSIGNEE_COLORS[task.assignee] || ASSIGNEE_COLORS.Default;
+                                                const deadlineNear = isDeadlineNear(task.dueDate) && status !== 'done';
                                                 return (
                                                     <div 
                                                         key={task.id} 
-                                                        className="task-card p-3 rounded-2xl shadow-sm border transition-all"
+                                                        className="task-card p-4 rounded-2xl shadow-sm border relative"
                                                         style={{ 
                                                             backgroundColor: colors.bg, 
                                                             borderColor: colors.border 
                                                         }}
                                                     >
-                                                        <div className="flex justify-between items-start mb-2">
+                                                        {/* Container for Tags */}
+                                                        <div className="absolute -top-3.5 right-2 flex flex-col items-end gap-1.5 z-40">
+                                                            {deadlineNear && (
+                                                                <div className="bg-red-600 text-white text-[8px] font-black px-2.5 py-1.5 rounded-md shadow-lg flex items-center gap-1 animate-tag border border-white/20 uppercase tracking-tighter">
+                                                                    <i data-lucide="zap" className="w-2.5 h-2.5 fill-current"></i>
+                                                                    Approaching deadline!!
+                                                                </div>
+                                                            )}
+                                                            {task.isWeekly && (
+                                                                <div className="bg-amber-400 text-amber-900 text-[8px] font-black px-2.5 py-1.5 rounded-md shadow-lg flex items-center gap-1 animate-tag border border-amber-500/30 uppercase tracking-tighter">
+                                                                    <i data-lucide="refresh-cw" className="w-2.5 h-2.5"></i>
+                                                                    Weekly Recurring
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        
+                                                        <div className="flex justify-between items-start mb-2 mt-2">
                                                             <h4 className="font-bold text-slate-800 text-sm leading-tight line-clamp-2">{task.title}</h4>
-                                                            {task.isWeekly && <i data-lucide="refresh-cw" className="w-3 h-3 text-blue-500 ml-2"></i>}
                                                         </div>
                                                         
                                                         <div className="flex justify-between items-center mb-3 text-[9px]">
@@ -270,21 +263,11 @@
                                                                 <i data-lucide="user" className="w-3 h-3"></i>
                                                                 <span className="font-black uppercase">{task.assignee}</span>
                                                             </div>
-                                                            <div className={`flex items-center gap-1 ${isDeadlineNear(task.dueDate) && status !== 'done' ? 'text-red-600 font-black' : 'text-slate-500'}`}>
+                                                            <div className={`flex items-center gap-1 ${deadlineNear ? 'text-red-700 font-black' : 'text-slate-500'}`}>
                                                                 <i data-lucide="calendar" className="w-3 h-3"></i>
                                                                 <span className="font-bold">{task.dueDate}</span>
                                                             </div>
                                                         </div>
-
-                                                        {status === 'in_progress' && (
-                                                            <div className="mb-3">
-                                                                <div className="flex gap-1">
-                                                                    {[10, 40, 70, 90].map(lv => (
-                                                                        <button key={lv} onClick={() => updateProgress(task, lv)} className={`flex-1 py-0.5 rounded text-[8px] font-bold transition-all ${task.progress === lv ? 'bg-slate-800 text-white':'bg-white/50 text-slate-600 hover:bg-white'}`}>{lv}%</button>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        )}
 
                                                         <div className="flex gap-1.5 border-t border-black/5 pt-2 mt-2">
                                                             {status !== 'todo' && (
@@ -308,16 +291,22 @@
                             </div>
                         ) : (
                             <div className="bg-white rounded-2xl p-6 shadow-xl border border-slate-200 h-full overflow-y-auto">
-                                <h2 className="text-sm font-black mb-4 uppercase text-slate-400">Lịch trình nhóm</h2>
+                                <h2 className="text-sm font-black mb-4 uppercase text-slate-400">Lịch trình chi tiết</h2>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                     {tasks.map(t => {
                                         const colors = ASSIGNEE_COLORS[t.assignee] || ASSIGNEE_COLORS.Default;
                                         return (
                                             <div key={t.id} className="p-3 border rounded-xl flex flex-col justify-between" style={{ backgroundColor: colors.bg, borderColor: colors.border }}>
-                                                <p className="font-bold text-xs text-slate-800 mb-1">{t.title}</p>
+                                                <div className="flex justify-between items-start mb-1">
+                                                    <p className="font-bold text-xs text-slate-800 line-clamp-1">{t.title}</p>
+                                                    <div className="flex gap-1">
+                                                        {t.isWeekly && <span className="bg-amber-400 text-[6px] px-1 rounded font-bold">W</span>}
+                                                        {isDeadlineNear(t.dueDate) && t.status !== 'done' && <span className="bg-red-600 text-white text-[7px] px-1 rounded font-bold animate-pulse">!!</span>}
+                                                    </div>
+                                                </div>
                                                 <div className="flex justify-between items-center text-[9px] font-bold">
                                                     <span style={{ color: colors.text }} className="uppercase">{t.assignee} - {t.status}</span>
-                                                    <span className="text-slate-500">{t.dueDate}</span>
+                                                    <span className={isDeadlineNear(t.dueDate) && t.status !== 'done' ? 'text-red-600':'text-slate-500'}>{t.dueDate}</span>
                                                 </div>
                                             </div>
                                         );
@@ -328,7 +317,7 @@
                     </main>
 
                     {isModalOpen && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                             <div className="bg-white p-8 rounded-[32px] w-full max-w-md shadow-2xl">
                                 <div className="flex justify-between items-center mb-6">
                                     <h3 className="text-lg font-black uppercase tracking-tighter text-slate-800">Tạo nhiệm vụ</h3>
@@ -337,14 +326,14 @@
                                 <div className="space-y-4">
                                     <input className="w-full px-5 py-3 bg-slate-50 border-none rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500 shadow-inner" placeholder="Tên nhiệm vụ..." value={newTitle} onChange={e => setNewTitle(e.target.value)} />
                                     <div className="grid grid-cols-2 gap-3">
-                                        <select className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl font-bold text-xs outline-none cursor-pointer" value={newAssignee} onChange={e => setNewAssignee(e.target.value)}>
+                                        <select className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl font-bold text-xs outline-none" value={newAssignee} onChange={e => setNewAssignee(e.target.value)}>
                                             {TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
                                         </select>
                                         <input type="date" className="w-full px-4 py-3 bg-slate-50 border-none rounded-xl font-bold text-xs outline-none" value={newDueDate} onChange={e => setNewDueDate(e.target.value)} />
                                     </div>
-                                    <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-xl">
-                                        <input type="checkbox" id="weekly" className="w-4 h-4 rounded border-blue-300 text-blue-600" checked={isWeekly} onChange={e => setIsWeekly(e.target.checked)} />
-                                        <label htmlFor="weekly" className="text-[10px] font-black text-blue-700 uppercase cursor-pointer select-none">Lặp lại hàng tuần</label>
+                                    <div className="flex items-center gap-2 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                                        <input type="checkbox" id="weekly" className="w-4 h-4 rounded border-amber-300 text-amber-600" checked={isWeekly} onChange={e => setIsWeekly(e.target.checked)} />
+                                        <label htmlFor="weekly" className="text-[10px] font-black text-amber-700 uppercase cursor-pointer select-none">Lặp lại hàng tuần (Add Gold Tag)</label>
                                     </div>
                                     <button onClick={createTask} className="w-full py-4 bg-slate-900 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg hover:bg-blue-600 transition-all">Triển khai</button>
                                 </div>
