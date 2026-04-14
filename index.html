@@ -13,7 +13,7 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- Firebase App & Services (Sử dụng bản Compat để tránh lỗi 'require' hoặc 'import') -->
+    <!-- Firebase App & Services -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -25,7 +25,6 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // Cấu hình Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyDyl2FoFZwKtFL6yb2sPEEWzJvBBzNK01A",
             authDomain: "taskhub-c3f41.firebaseapp.com",
@@ -36,7 +35,6 @@
             measurementId: "G-2EWMV1JJMK"
         };
 
-        // Khởi tạo Firebase qua biến toàn cục (window.firebase)
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
@@ -56,7 +54,6 @@
             const [newTaskTitle, setNewTaskTitle] = useState('');
             const [loading, setLoading] = useState(true);
 
-            // Đăng nhập ẩn danh
             useEffect(() => {
                 auth.signInAnonymously().catch(err => console.error("Firebase Auth Error:", err));
                 const unsubscribe = auth.onAuthStateChanged((u) => {
@@ -65,7 +62,6 @@
                 return () => unsubscribe();
             }, []);
 
-            // Lắng nghe dữ liệu thời gian thực
             useEffect(() => {
                 if (!user || !isLoggedIn) return;
                 
@@ -84,7 +80,6 @@
                 return () => unsubscribe();
             }, [user, isLoggedIn]);
 
-            // Cập nhật icon Lucide sau mỗi lần render
             useEffect(() => {
                 if (window.lucide) {
                     window.lucide.createIcons();
@@ -275,7 +270,7 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    )}
                 </div>
             );
         }
