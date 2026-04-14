@@ -18,7 +18,6 @@
         .bg-done { background: linear-gradient(to right, #00b09b, #96c93d); }
         .bg-header { background: linear-gradient(to right, #232526, #414345); }
         
-        /* Tăng không gian phía trên để tránh bị che tag */
         .task-list { 
             max-height: calc(100vh - 250px); 
             overflow-y: auto; 
@@ -31,15 +30,18 @@
         .task-card { transition: all 0.2s ease; }
         .task-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px -2px rgb(0 0 0 / 0.15); }
         
-        /* Animation cho các tag cảnh báo */
         @keyframes subtle-bounce {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-4px); }
         }
         .animate-tag { animation: subtle-bounce 2s infinite ease-in-out; }
 
-        /* Đảm bảo thanh tiêu đề trạng thái luôn ở trên cùng nhưng không che tag khi cuộn */
         .status-header { position: sticky; top: -12px; z-index: 30; }
+
+        /* Custom Slider Styling */
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { background: rgba(0,0,0,0.1); height: 6px; border-radius: 3px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%; background: #3b82f6; cursor: pointer; margin-top: -4px; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
     </style>
 </head>
 <body class="bg-gray-100 font-sans text-slate-900">
@@ -152,25 +154,48 @@
                 } catch (err) { console.error(err); }
             };
 
-            const updateTaskStatus = async (task, newStatus) => {
+            const updateTaskProgress = async (task, progressValue) => {
                 if (!checkPermission(task)) return;
-                let updates = { status: newStatus };
-                if (newStatus === 'done') {
-                    updates.completedAt = Date.now();
-                    updates.progress = 100;
-                    if (task.isWeekly) {
-                        const nextWeek = new Date(task.dueDate);
-                        nextWeek.setDate(nextWeek.getDate() + 7);
-                        await collectionRef.add({
-                            ...task, id: null, status: 'todo', progress: 0,
-                            dueDate: nextWeek.toISOString().split('T')[0], completedAt: null
-                        });
-                    }
-                } else {
-                    updates.completedAt = null;
-                    updates.progress = newStatus === 'todo' ? 0 : 10;
+                const value = parseInt(progressValue);
+                let updates = { progress: value };
+                
+                // Tự động chuyển trạng thái nếu đạt 100% hoặc về 0%
+                if (value === 100 && task.status !== 'done') {
+                    handleComplete(task);
+                    return;
+                } else if (value > 0 && value < 100 && task.status !== 'in_progress') {
+                    updates.status = 'in_progress';
+                }
+                
+                await collectionRef.doc(task.id).update(updates);
+            };
+
+            const handleComplete = async (task) => {
+                if (!checkPermission(task)) return;
+                let updates = { status: 'done', progress: 100, completedAt: Date.now() };
+                
+                if (task.isWeekly) {
+                    const nextWeek = new Date(task.dueDate);
+                    nextWeek.setDate(nextWeek.getDate() + 7);
+                    await collectionRef.add({
+                        ...task, id: null, status: 'todo', progress: 0,
+                        dueDate: nextWeek.toISOString().split('T')[0], completedAt: null,
+                        createdAt: Date.now()
+                    });
                 }
                 await collectionRef.doc(task.id).update(updates);
+            };
+
+            const updateTaskStatus = async (task, newStatus) => {
+                if (!checkPermission(task)) return;
+                if (newStatus === 'done') {
+                    handleComplete(task);
+                } else {
+                    let updates = { status: newStatus, completedAt: null };
+                    if (newStatus === 'todo') updates.progress = 0;
+                    if (newStatus === 'in_progress' && task.progress === 0) updates.progress = 10;
+                    await collectionRef.doc(task.id).update(updates);
+                }
             };
 
             const deleteTask = async (task) => {
@@ -238,7 +263,6 @@
                                                             borderColor: colors.border 
                                                         }}
                                                     >
-                                                        {/* Container for Tags */}
                                                         <div className="absolute -top-3.5 right-2 flex flex-col items-end gap-1.5 z-40">
                                                             {deadlineNear && (
                                                                 <div className="bg-red-600 text-white text-[8px] font-black px-2.5 py-1.5 rounded-md shadow-lg flex items-center gap-1 animate-tag border border-white/20 uppercase tracking-tighter">
@@ -269,6 +293,38 @@
                                                             </div>
                                                         </div>
 
+                                                        {/* Chức năng set tiến độ */}
+                                                        {status === 'in_progress' && (
+                                                            <div className="mb-4 bg-black/5 p-2 rounded-xl border border-black/5">
+                                                                <div className="flex justify-between items-center mb-1.5">
+                                                                    <span className="text-[8px] font-black uppercase text-slate-500">Tiến độ công việc</span>
+                                                                    <span className="text-[10px] font-black text-blue-600 bg-white px-1.5 rounded shadow-sm">{task.progress || 0}%</span>
+                                                                </div>
+                                                                <input 
+                                                                    type="range" 
+                                                                    min="0" max="100" step="10" 
+                                                                    value={task.progress || 0} 
+                                                                    onChange={(e) => updateTaskProgress(task, e.target.value)}
+                                                                    className="w-full h-1.5 accent-blue-600"
+                                                                />
+                                                                <div className="flex justify-between mt-1 text-[7px] font-bold text-slate-400">
+                                                                    <span>0%</span>
+                                                                    <span>50%</span>
+                                                                    <span>100%</span>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Thanh hiển thị tiến độ cho Done hoặc Todo (nhỏ gọn) */}
+                                                        {status !== 'in_progress' && (
+                                                            <div className="w-full h-1 bg-black/5 rounded-full mb-3 overflow-hidden">
+                                                                <div 
+                                                                    className={`h-full transition-all duration-500 ${status === 'done' ? 'bg-green-500' : 'bg-slate-300'}`} 
+                                                                    style={{ width: `${task.progress || 0}%` }}
+                                                                ></div>
+                                                            </div>
+                                                        )}
+
                                                         <div className="flex gap-1.5 border-t border-black/5 pt-2 mt-2">
                                                             {status !== 'todo' && (
                                                                 <button onClick={() => updateTaskStatus(task, status === 'done' ? 'in_progress' : 'todo')} className="p-1.5 bg-white/40 text-slate-600 rounded-lg hover:bg-white transition-colors">
@@ -277,7 +333,7 @@
                                                             )}
                                                             {status !== 'done' && (
                                                                 <button onClick={() => updateTaskStatus(task, status === 'todo' ? 'in_progress' : 'done')} className="flex-1 py-1.5 bg-slate-900/90 text-white rounded-lg font-black uppercase text-[8px] tracking-widest hover:bg-blue-600 transition-colors shadow-sm">
-                                                                    Tiếp theo
+                                                                    {status === 'todo' ? 'Bắt đầu' : 'Hoàn thành'}
                                                                 </button>
                                                             )}
                                                             <button onClick={() => deleteTask(task)} className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
@@ -305,7 +361,7 @@
                                                     </div>
                                                 </div>
                                                 <div className="flex justify-between items-center text-[9px] font-bold">
-                                                    <span style={{ color: colors.text }} className="uppercase">{t.assignee} - {t.status}</span>
+                                                    <span style={{ color: colors.text }} className="uppercase">{t.assignee} - {t.progress || 0}%</span>
                                                     <span className={isDeadlineNear(t.dueDate) && t.status !== 'done' ? 'text-red-600':'text-slate-500'}>{t.dueDate}</span>
                                                 </div>
                                             </div>
