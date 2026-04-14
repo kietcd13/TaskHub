@@ -13,16 +13,19 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- Firebase App & Firestore (Dùng bản Compat để chạy trực tiếp trên Browser không cần build) -->
+    <!-- Firebase App & Services (Sử dụng bản Compat để tránh lỗi 'require' hoặc 'import') -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body class="bg-slate-50">
     <div id="root"></div>
 
     <script type="text/babel">
-        // Cấu hình Firebase của bạn
+        // Cấu hình Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyDyl2FoFZwKtFL6yb2sPEEWzJvBBzNK01A",
             authDomain: "taskhub-c3f41.firebaseapp.com",
@@ -33,11 +36,14 @@
             measurementId: "G-2EWMV1JJMK"
         };
 
-        // Khởi tạo Firebase bản Compat
-        firebase.initializeApp(firebaseConfig);
+        // Khởi tạo Firebase qua biến toàn cục (window.firebase)
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        
         const auth = firebase.auth();
         const db = firebase.firestore();
-        const appId = 'github-deployment'; // ID để phân biệt dữ liệu
+        const appId = 'github-deployment';
 
         const { useState, useEffect } = React;
 
@@ -50,16 +56,16 @@
             const [newTaskTitle, setNewTaskTitle] = useState('');
             const [loading, setLoading] = useState(true);
 
-            // Xử lý Đăng nhập ẩn danh
+            // Đăng nhập ẩn danh
             useEffect(() => {
-                auth.signInAnonymously().catch(err => console.error("Lỗi Auth:", err));
+                auth.signInAnonymously().catch(err => console.error("Firebase Auth Error:", err));
                 const unsubscribe = auth.onAuthStateChanged((u) => {
                     setUser(u);
                 });
                 return () => unsubscribe();
             }, []);
 
-            // Lấy dữ liệu Real-time
+            // Lắng nghe dữ liệu thời gian thực
             useEffect(() => {
                 if (!user || !isLoggedIn) return;
                 
@@ -71,12 +77,19 @@
                         setTasks(data);
                         setLoading(false);
                     }, (err) => {
-                        console.error("Lỗi Firestore:", err);
+                        console.error("Firestore Error:", err);
                         setLoading(false);
                     });
                 
                 return () => unsubscribe();
             }, [user, isLoggedIn]);
+
+            // Cập nhật icon Lucide sau mỗi lần render
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            });
 
             const handleLogin = (e) => {
                 e.preventDefault();
@@ -95,14 +108,18 @@
             const addTask = async () => {
                 if (!newTaskTitle.trim()) return;
                 const path = `artifacts/${appId}/public/data/team_tasks`;
-                await db.collection(path).add({
-                    title: newTaskTitle,
-                    assignee: username,
-                    status: 'todo',
-                    createdAt: Date.now()
-                });
-                setNewTaskTitle('');
-                setIsModalOpen(false);
+                try {
+                    await db.collection(path).add({
+                        title: newTaskTitle,
+                        assignee: username,
+                        status: 'todo',
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp() || Date.now()
+                    });
+                    setNewTaskTitle('');
+                    setIsModalOpen(false);
+                } catch (err) {
+                    console.error("Add Task Error:", err);
+                }
             };
 
             const updateStatus = async (id, newStatus) => {
@@ -117,14 +134,17 @@
 
             if (!isLoggedIn) {
                 return (
-                    <div className="min-h-screen flex items-center justify-center bg-blue-600 p-4">
+                    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 to-indigo-700 p-4">
                         <div className="bg-white p-10 rounded-3xl shadow-2xl w-full max-w-md text-center">
+                            <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                                <i data-lucide="layout-grid" className="w-10 h-10"></i>
+                            </div>
                             <h2 className="text-3xl font-black text-slate-800 uppercase mb-2">Task Hub</h2>
-                            <p className="text-slate-400 mb-8 font-medium">Hệ thống quản lý công việc nhóm</p>
+                            <p className="text-slate-400 mb-8 font-medium italic">Hệ thống quản lý công việc nhóm</p>
                             <form onSubmit={handleLogin} className="space-y-4">
                                 <input required type="text" value={username} onChange={e => setUsername(e.target.value)} 
                                     placeholder="Nhập tên của bạn..." 
-                                    className="w-full px-5 py-4 bg-slate-100 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none" />
+                                    className="w-full px-5 py-4 bg-slate-100 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none text-center" />
                                 <button className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-200">Bắt đầu ngay</button>
                             </form>
                         </div>
@@ -133,65 +153,129 @@
             }
 
             return (
-                <div className="min-h-screen">
-                    <header className="bg-white border-b px-8 py-4 flex justify-between items-center sticky top-0 z-10">
-                        <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-black">T</div>
-                            <h1 className="font-black text-xl uppercase tracking-tighter text-slate-800">Task Hub</h1>
+                <div className="min-h-screen flex flex-col">
+                    <header className="bg-white border-b px-4 md:px-8 py-4 flex justify-between items-center sticky top-0 z-10">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                                <i data-lucide="check-square" className="w-6 h-6"></i>
+                            </div>
+                            <h1 className="font-black text-xl uppercase tracking-tighter text-slate-800 hidden sm:block">Task Hub</h1>
                         </div>
-                        <div className="flex items-center gap-4">
-                            <span className="text-xs font-bold px-4 py-2 bg-slate-100 rounded-full text-slate-600">Xin chào, {username}</span>
-                            <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-blue-700 shadow-md">Thêm Task</button>
-                            <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 transition-colors">Đăng xuất</button>
+                        <div className="flex items-center gap-3 md:gap-4">
+                            <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-full">
+                                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                <span className="text-xs font-bold text-slate-600">{username}</span>
+                            </div>
+                            <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-5 py-2 rounded-xl font-bold text-sm hover:bg-blue-700 shadow-md flex items-center gap-2 transition-all active:scale-95">
+                                <i data-lucide="plus" className="w-4 h-4"></i>
+                                <span>Thêm Task</span>
+                            </button>
+                            <button onClick={handleLogout} title="Đăng xuất" className="p-2 text-slate-400 hover:text-red-500 transition-colors">
+                                <i data-lucide="log-out" className="w-5 h-5"></i>
+                            </button>
                         </div>
                     </header>
 
-                    <main className="max-w-7xl mx-auto p-8">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                            {['todo', 'in_progress', 'done'].map(colStatus => (
-                                <div key={colStatus} className="flex flex-col gap-4">
-                                    <h3 className="font-black text-[11px] uppercase tracking-[0.2em] text-slate-400 px-2">
-                                        {colStatus === 'todo' ? 'Cần làm' : colStatus === 'in_progress' ? 'Đang chạy' : 'Hoàn thành'} ({tasks.filter(t => t.status === colStatus).length})
-                                    </h3>
-                                    <div className="flex flex-col gap-4">
-                                        {tasks.filter(t => t.status === colStatus).map(task => (
-                                            <div key={task.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow group">
-                                                <div className="flex justify-between items-start mb-3">
-                                                    <p className={`font-bold text-slate-800 ${task.status === 'done' ? 'line-through text-slate-300' : ''}`}>{task.title}</p>
-                                                    <button onClick={() => deleteTask(task.id)} className="text-slate-200 hover:text-red-500 transition-colors">✕</button>
-                                                </div>
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">{task.assignee}</span>
-                                                    <div className="flex gap-1">
-                                                        {task.status !== 'todo' && <button onClick={() => updateStatus(task.id, 'todo')} className="text-[10px] font-bold p-1 text-slate-300 hover:text-slate-600">Re-open</button>}
-                                                        {task.status !== 'done' && <button onClick={() => updateStatus(task.id, task.status === 'todo' ? 'in_progress' : 'done')} className="text-[10px] font-bold bg-slate-800 text-white px-3 py-1 rounded-lg">Tiếp tục</button>}
+                    <main className="flex-1 max-w-7xl mx-auto p-4 md:p-8 w-full">
+                        {loading ? (
+                            <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-4">
+                                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+                                <p className="font-bold text-sm uppercase tracking-widest">Đang tải dữ liệu...</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+                                {[
+                                    {id: 'todo', label: 'Cần làm', color: 'slate'},
+                                    {id: 'in_progress', label: 'Đang chạy', color: 'blue'},
+                                    {id: 'done', label: 'Hoàn thành', color: 'green'}
+                                ].map(col => (
+                                    <div key={col.id} className="flex flex-col gap-4">
+                                        <div className="flex justify-between items-center px-2">
+                                            <h3 className="font-black text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                                                {col.label}
+                                            </h3>
+                                            <span className="text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
+                                                {tasks.filter(t => t.status === col.id).length}
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-col gap-4 min-h-[200px]">
+                                            {tasks.filter(t => t.status === col.id).map(task => (
+                                                <div key={task.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:shadow-xl hover:scale-[1.02] transition-all group relative overflow-hidden">
+                                                    <div className="flex justify-between items-start mb-4">
+                                                        <p className={`font-bold text-slate-800 leading-tight ${task.status === 'done' ? 'line-through text-slate-300' : ''}`}>
+                                                            {task.title}
+                                                        </p>
+                                                        <button onClick={() => deleteTask(task.id)} className="text-slate-200 hover:text-red-500 transition-colors ml-2">
+                                                            <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                                        </button>
+                                                    </div>
+                                                    <div className="flex justify-between items-center pt-4 border-t border-slate-50">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <div className="w-5 h-5 bg-blue-50 text-blue-500 rounded flex items-center justify-center">
+                                                                <i data-lucide="user" className="w-3 h-3"></i>
+                                                            </div>
+                                                            <span className="text-[10px] font-bold text-slate-500 truncate max-w-[80px]">{task.assignee}</span>
+                                                        </div>
+                                                        <div className="flex gap-1">
+                                                            {task.status !== 'todo' && (
+                                                                <button onClick={() => updateStatus(task.id, 'todo')} title="Làm lại" className="p-1.5 text-slate-300 hover:text-slate-600 transition-colors">
+                                                                    <i data-lucide="rotate-ccw" className="w-4 h-4"></i>
+                                                                </button>
+                                                            )}
+                                                            {task.status !== 'done' && (
+                                                                <button onClick={() => updateStatus(task.id, task.status === 'todo' ? 'in_progress' : 'done')} className="flex items-center gap-1 text-[10px] font-black bg-slate-900 text-white px-3 py-1.5 rounded-lg hover:bg-blue-600 transition-colors shadow-lg shadow-slate-200">
+                                                                    <span>TIẾP</span>
+                                                                    <i data-lucide="arrow-right" className="w-3 h-3"></i>
+                                                                </button>
+                                                            )}
+                                                            {task.status === 'done' && (
+                                                                <div className="text-green-500">
+                                                                    <i data-lucide="check-circle" className="w-5 h-5"></i>
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            ))}
+                                            {tasks.filter(t => t.status === col.id).length === 0 && (
+                                                <div className="border-2 border-dashed border-slate-200 rounded-2xl h-24 flex items-center justify-center text-slate-300 text-xs font-bold uppercase tracking-widest">
+                                                    Trống
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        )}
                     </main>
 
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                            <div className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl">
-                                <h3 className="font-black text-xl mb-6 uppercase">Tạo công việc mới</h3>
-                                <input autoFocus className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl font-bold mb-6 outline-none focus:ring-2 focus:ring-blue-500" 
-                                    placeholder="Bạn cần làm gì?" 
-                                    value={newTaskTitle} 
-                                    onChange={e => setNewTaskTitle(e.target.value)} 
-                                    onKeyPress={e => e.key === 'Enter' && addTask()}
-                                />
-                                <div className="flex gap-3">
-                                    <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-bold text-slate-400">Hủy</button>
-                                    <button onClick={addTask} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-lg shadow-blue-100">Lưu Task</button>
+                            <div className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="font-black text-xl uppercase tracking-tight">Việc cần làm mới</h3>
+                                    <button onClick={() => setIsModalOpen(false)} className="text-slate-300 hover:text-slate-600">
+                                        <i data-lucide="x" className="w-6 h-6"></i>
+                                    </button>
+                                </div>
+                                <div className="space-y-6">
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block tracking-widest">Nội dung công việc</label>
+                                        <input autoFocus className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl font-bold outline-none focus:ring-2 focus:ring-blue-500 shadow-inner" 
+                                            placeholder="Ghi chú ngắn gọn..." 
+                                            value={newTaskTitle} 
+                                            onChange={e => setNewTaskTitle(e.target.value)} 
+                                            onKeyPress={e => e.key === 'Enter' && addTask()}
+                                        />
+                                    </div>
+                                    <button onClick={addTask} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-blue-100 flex items-center justify-center gap-2 hover:bg-blue-700 transition-all">
+                                        <i data-lucide="send" className="w-4 h-4"></i>
+                                        Lưu Task
+                                    </button>
                                 </div>
                             </div>
                         </div>
-                    )}
+                    </div>
                 </div>
             );
         }
