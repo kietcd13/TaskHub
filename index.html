@@ -94,7 +94,7 @@
             const [customers, setCustomers] = useState([]);
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [view, setView] = useState('board');
-            const [csView, setCsView] = useState('grid');
+            const [csView, setCsView] = useState('list'); // Default is list view
             const [searchQuery, setSearchQuery] = useState('');
             const [csHistory, setCsHistory] = useState([]);
             const [selectedWeekId, setSelectedWeekId] = useState('current');
@@ -210,6 +210,7 @@
 
             const checkPermission = (item) => {
                 if (username === MANAGER_NAME) return true;
+                if (username === "Guest") return false; // Guest cannot modify
                 if (item.createdBy === username || item.assignee === username || item.tlInCharge === username) return true;
                 return false;
             };
@@ -234,7 +235,7 @@
             };
 
             const createTask = async () => {
-                if (!newTitle || !newDueDate) return;
+                if (!newTitle || !newDueDate || username === "Guest") return;
                 await taskCol.add({
                     title: newTitle, assignee: newAssignee, dueDate: newDueDate,
                     isWeekly: isWeekly, status: 'todo', progress: 0,
@@ -245,7 +246,7 @@
             };
 
             const createCustomer = async () => {
-                if (!newCsName) return;
+                if (!newCsName || username === "Guest") return;
                 await csCol.add({
                     name: newCsName, 
                     region: newCsRegion, 
@@ -263,6 +264,7 @@
             };
 
             const deleteCustomer = async (id) => {
+                if (username === "Guest") return;
                 await csCol.doc(id).delete();
             };
 
@@ -276,7 +278,7 @@
             };
 
             const updateTaskProgress = async (task, value) => {
-                if (!checkPermission(task)) return;
+                if (!checkPermission(task) || username === "Guest") return;
                 let updates = { progress: value };
                 if (value === 100) {
                     updates.status = 'done';
@@ -293,10 +295,12 @@
             };
 
             const updateCsRating = async (id, field, level) => {
+                if (username === "Guest") return;
                 await csCol.doc(id).update({ [`ratings.${field}`]: level, reviewed: false });
             };
 
             const updateCsComment = async (id, field, text) => {
+                if (username === "Guest") return;
                 await csCol.doc(id).update({ [`comments.${field}`]: text, reviewed: false });
             };
 
@@ -339,14 +343,12 @@
                 if (username !== MANAGER_NAME) return;
                 const weekStr = getWeekString();
                 
-                // Lưu trữ dữ liệu snapshot hiện tại vào lịch sử
                 await csHistoryCol.add({
                     weekName: weekStr,
                     createdAt: Date.now(),
                     customersData: customers
                 });
 
-                // Reset lại toàn bộ data hiện tại (về mức Stable và bỏ comment)
                 const batch = db.batch();
                 customers.forEach(cs => {
                     const ref = csCol.doc(cs.id);
@@ -393,7 +395,7 @@
                         <div className="bg-white p-10 rounded-[40px] shadow-2xl w-full max-w-sm text-center">
                             <h2 className="text-2xl font-black mb-8 uppercase tracking-tighter text-slate-800">{t.verify}</h2>
                             <div className="grid gap-3">
-                                {TEAM_MEMBERS.map(m => (
+                                {[...TEAM_MEMBERS, "Guest"].map(m => (
                                     <button key={m} onClick={() => handleLogin(m)} className="py-4 bg-slate-50 border-2 border-transparent hover:border-blue-500 rounded-2xl font-bold transition-all text-slate-600">{m} {m === MANAGER_NAME ? t.mgr : ""}</button>
                                 ))}
                             </div>
@@ -469,8 +471,8 @@
                                 </div>
                             ) : activeHub === 'cs' ? (
                                 <div className="flex bg-white/10 rounded-xl p-1 border border-white/10">
-                                    <button onClick={() => setCsView('grid')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${csView==='grid'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.grid}</button>
                                     <button onClick={() => setCsView('list')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${csView==='list'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.list}</button>
+                                    <button onClick={() => setCsView('grid')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${csView==='grid'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.grid}</button>
                                 </div>
                             ) : (
                                 <div className="flex bg-white/10 rounded-xl p-1 border border-white/10">
@@ -487,7 +489,7 @@
                             {activeHub === 'cs' && username === MANAGER_NAME && (
                                 <button onClick={closeWeek} className="bg-amber-600 hover:opacity-80 px-4 py-1.5 rounded-lg font-black text-[10px] transition-all uppercase text-white shadow-md">{t.close_week}</button>
                             )}
-                            {activeHub !== 'overview' && (
+                            {activeHub !== 'overview' && username !== "Guest" && (
                                 <button onClick={() => setIsModalOpen(true)} className={`${activeHub === 'task' ? 'bg-blue-600' : 'bg-emerald-600'} hover:opacity-80 px-4 py-1.5 rounded-lg font-black text-[10px] transition-all uppercase`}>{t.new}</button>
                             )}
                             <span className="text-[10px] font-bold bg-white/10 px-3 py-1.5 rounded-lg border border-white/20 uppercase tracking-widest">{username}</span>
@@ -532,8 +534,8 @@
                                                                 </div>
                                                             </div>
                                                             <div className="flex gap-2">
-                                                                {status !== 'done' && <button onClick={() => updateTaskProgress(task, status === 'todo' ? 10 : 100)} className="flex-1 py-1.5 bg-slate-900 text-white rounded-lg font-black uppercase text-[8px] tracking-widest">{status === 'todo' ? t.start : t.finish}</button>}
-                                                                <button onClick={() => taskCol.doc(task.id).update({ status: 'cancelled' })} className="p-1.5 text-slate-300 hover:text-red-500"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                                                {status !== 'done' && <button onClick={() => updateTaskProgress(task, status === 'todo' ? 10 : 100)} className="flex-1 py-1.5 bg-slate-900 text-white rounded-lg font-black uppercase text-[8px] tracking-widest disabled:opacity-50" disabled={username === "Guest"}>{status === 'todo' ? t.start : t.finish}</button>}
+                                                                <button onClick={() => username !== "Guest" && taskCol.doc(task.id).update({ status: 'cancelled' })} className={`p-1.5 text-slate-300 transition-all ${username !== "Guest" ? "hover:text-red-500" : "opacity-50 cursor-not-allowed"}`}><i data-lucide="trash-2" className="w-4 h-4"></i></button>
                                                             </div>
                                                         </div>
                                                     );
@@ -571,15 +573,15 @@
                                                     {['workload', 'communication', 'quality'].map(field => (
                                                         <div key={field} className="space-y-2">
                                                             <div className="flex justify-between items-center"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{t[field]}</span><span className={`text-[9px] font-black uppercase ${RATING_LEVELS.find(l => l.id === cs.ratings[field])?.color}`}>{cs.ratings[field]}</span></div>
-                                                            <div className="grid grid-cols-3 gap-1">{RATING_LEVELS.map(lv => (<button key={lv.id} onClick={() => updateCsRating(cs.id, field, lv.id)} className={`py-1.5 rounded-lg text-[8px] font-black border-2 transition-all ${cs.ratings[field] === lv.id ? `${lv.bg} ${lv.border} ${lv.color}` : 'bg-slate-50 border-slate-50 text-slate-300 hover:border-slate-200'}`}>{lv.label}</button>))}</div>
-                                                            {(cs.ratings[field] === 'at-risk' || cs.ratings[field] === 'critical') && (<textarea className="w-full p-2 bg-red-50/50 border border-red-100 rounded-xl text-[10px] font-medium text-slate-600 focus:ring-1 focus:ring-red-200" placeholder={t.reason} rows="2" value={cs.comments?.[field] || ''} onChange={(e) => updateCsComment(cs.id, field, e.target.value)} />)}
+                                                            <div className="grid grid-cols-3 gap-1">{RATING_LEVELS.map(lv => (<button key={lv.id} onClick={() => updateCsRating(cs.id, field, lv.id)} disabled={username === "Guest"} className={`py-1.5 rounded-lg text-[8px] font-black border-2 transition-all ${cs.ratings[field] === lv.id ? `${lv.bg} ${lv.border} ${lv.color}` : 'bg-slate-50 border-slate-50 text-slate-300 hover:border-slate-200 disabled:opacity-50'}`}>{lv.label}</button>))}</div>
+                                                            {(cs.ratings[field] === 'at-risk' || cs.ratings[field] === 'critical') && (<textarea disabled={username === "Guest"} className="w-full p-2 bg-red-50/50 border border-red-100 rounded-xl text-[10px] font-medium text-slate-600 focus:ring-1 focus:ring-red-200 disabled:opacity-50" placeholder={t.reason} rows="2" value={cs.comments?.[field] || ''} onChange={(e) => updateCsComment(cs.id, field, e.target.value)} />)}
                                                         </div>
                                                     ))}
                                                 </div>
                                                 <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
                                                     <div className="flex items-center gap-2">{cs.reviewed && <i data-lucide="check-circle" className="w-4 h-4 text-emerald-500"></i>}<span className={`text-[9px] font-black uppercase ${cs.reviewed ? 'text-emerald-600' : 'text-slate-300'}`}>{cs.reviewed ? t.reviewed : t.waiting}</span></div>
                                                     <div className="flex items-center gap-2">
-                                                        {checkPermission(cs) && (
+                                                        {checkPermission(cs) && username !== "Guest" && (
                                                             <button onClick={() => deleteCustomer(cs.id)} className="p-1.5 rounded-lg text-slate-300 hover:bg-red-50 hover:text-red-500 transition-all" title={t.delete_client}>
                                                                 <i data-lucide="trash-2" className="w-4 h-4"></i>
                                                             </button>
@@ -627,14 +629,16 @@
                                                                     <div className="flex flex-col gap-1.5">
                                                                         <select 
                                                                             value={cs.ratings[field]} 
+                                                                            disabled={username === "Guest"}
                                                                             onChange={(e) => updateCsRating(cs.id, field, e.target.value)}
-                                                                            className={`text-[9px] font-black uppercase border-none bg-transparent outline-none ${RATING_LEVELS.find(l => l.id === cs.ratings[field])?.color}`}
+                                                                            className={`text-[9px] font-black uppercase border-none bg-transparent outline-none disabled:opacity-70 ${RATING_LEVELS.find(l => l.id === cs.ratings[field])?.color}`}
                                                                         >
                                                                             {RATING_LEVELS.map(lv => <option key={lv.id} value={lv.id} className="text-slate-800">{lv.label}</option>)}
                                                                         </select>
                                                                         {(cs.ratings[field] === 'at-risk' || cs.ratings[field] === 'critical') && (
                                                                             <input 
-                                                                                className="p-1.5 bg-red-50/50 border-b border-red-100 text-[8px] font-medium text-slate-600 focus:outline-none min-w-[120px]" 
+                                                                                disabled={username === "Guest"}
+                                                                                className="p-1.5 bg-red-50/50 border-b border-red-100 text-[8px] font-medium text-slate-600 focus:outline-none min-w-[120px] disabled:opacity-70" 
                                                                                 placeholder={t.note}
                                                                                 value={cs.comments?.[field] || ''} 
                                                                                 onChange={(e) => updateCsComment(cs.id, field, e.target.value)}
@@ -646,7 +650,7 @@
                                                             <td className="px-6 py-4 text-right">
                                                                 <div className="flex items-center justify-end gap-3">
                                                                     {cs.reviewed && <i data-lucide="check-circle" className="w-4 h-4 text-emerald-500"></i>}
-                                                                    {checkPermission(cs) && (
+                                                                    {checkPermission(cs) && username !== "Guest" && (
                                                                         <button onClick={() => deleteCustomer(cs.id)} className="text-slate-300 hover:text-red-500 transition-all" title={t.delete_client}>
                                                                             <i data-lucide="trash-2" className="w-4 h-4"></i>
                                                                         </button>
@@ -739,7 +743,7 @@
                         ) : null}
                     </main>
 
-                    {isModalOpen && (
+                    {isModalOpen && username !== "Guest" && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                             <div className="bg-white p-8 rounded-[40px] w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
                                 <div className="flex justify-between items-center mb-6">
