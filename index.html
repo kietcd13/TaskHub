@@ -96,6 +96,8 @@
             const [view, setView] = useState('board');
             const [csView, setCsView] = useState('grid');
             const [searchQuery, setSearchQuery] = useState('');
+            const [csHistory, setCsHistory] = useState([]);
+            const [selectedWeekId, setSelectedWeekId] = useState('current');
             
             // Task Form States
             const [newTitle, setNewTitle] = useState('');
@@ -112,8 +114,9 @@
 
             const taskCol = db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('team_tasks');
             const csCol = db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('customers');
+            const csHistoryCol = db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('cs_history');
 
-            const t = {
+            const translations = {
                 EN: {
                     todo: "To-do", in_progress: "In Progress", done: "Completed",
                     new: "+ NEW", start: "Start", finish: "Finish",
@@ -122,19 +125,38 @@
                     task_name: "Task name...", create: "Deploy", gold_tag: "Add Gold Tag (Weekly)",
                     cs_title: "CS Hub", back: "Back to Hubs",
                     reviewed: "Reviewed", waiting: "Waiting Review", confirm: "Confirm Review",
-                    reset: "Reset Review", grid: "GRID", list: "LIST", search: "Search client..."
+                    reset: "Reset Review", grid: "GRID", list: "LIST", search: "Search client...",
+                    mgr: "(Mgr)", workspace_choice: "Workspace Choice", logged_in_as: "Logged in as",
+                    task_hub_title: "Task Hub Pro", overview_hub: "Overview Hub", sign_out: "Sign Out",
+                    current_week: "Current Week", close_week: "Close Week", client_ratings_overview: "Client Ratings Overview",
+                    aggregated_from: "Aggregated from CS Hub", status_overview: "Status", loading_charts: "Loading Charts...",
+                    client_info: "Client Info", assignee: "Assignee", workload: "Workload", communication: "COM",
+                    quality: "Quality", actions: "Actions", trial: "TRIAL", reason: "Reason...", note: "Note...",
+                    new_task: "New Task", add_client: "Add Client", client_name: "Client Name", enter_name: "Enter name...",
+                    status_label: "Status", region: "Region", products: "Products", tl_in_charge: "TL In Charge",
+                    deploy_client: "Deploy Client", progress: "Progress", delete_client: "Delete Client"
                 },
                 VN: {
                     todo: "Cần làm", in_progress: "Đang tiến hành", done: "Hoàn thành",
                     new: "+ MỚI", start: "Bắt đầu", finish: "Xong",
-                    weekly: "Lặp lại hàng tuần", deadline: "Approaching deadline!!",
+                    weekly: "Lặp lại hàng tuần", deadline: "Sắp đến hạn!!",
                     verify: "Xác minh danh tính", board: "BẢNG", calendar: "LỊCH TRÌNH",
                     task_name: "Tên nhiệm vụ...", create: "Triển khai", gold_tag: "Thêm Gold Tag (Hàng tuần)",
                     cs_title: "CS Hub", back: "Quay lại Hubs",
                     reviewed: "Đã duyệt", waiting: "Chờ duyệt", confirm: "Xác nhận Duyệt",
-                    reset: "Làm mới tuần", grid: "LƯỚI", list: "DANH SÁCH", search: "Tìm khách hàng..."
+                    reset: "Làm mới tuần", grid: "LƯỚI", list: "DANH SÁCH", search: "Tìm khách hàng...",
+                    mgr: "(Quản lý)", workspace_choice: "Lựa chọn không gian", logged_in_as: "Đăng nhập với tên",
+                    task_hub_title: "Task Hub Pro", overview_hub: "Tổng Quan", sign_out: "Đăng xuất",
+                    current_week: "Tuần Hiện Tại", close_week: "Chốt Tuần", client_ratings_overview: "Tổng quan đánh giá khách hàng",
+                    aggregated_from: "Tổng hợp từ CS Hub", status_overview: "Trạng thái", loading_charts: "Đang tải biểu đồ...",
+                    client_info: "Thông tin KH", assignee: "Người phụ trách", workload: "Khối lượng", communication: "Giao tiếp",
+                    quality: "Chất lượng", actions: "Thao tác", trial: "DÙNG THỬ", reason: "Lý do...", note: "Ghi chú...",
+                    new_task: "Nhiệm vụ mới", add_client: "Thêm khách hàng", client_name: "Tên khách hàng", enter_name: "Nhập tên...",
+                    status_label: "Trạng thái", region: "Khu vực", products: "Sản phẩm", tl_in_charge: "Trưởng nhóm",
+                    deploy_client: "Triển khai", progress: "Tiến độ", delete_client: "Xóa KH"
                 }
-            }[lang];
+            };
+            const t = translations[lang];
 
             useEffect(() => {
                 auth.signInAnonymously();
@@ -173,7 +195,11 @@
                     setCustomers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                 });
 
-                return () => { unsubTasks(); unsubCs(); };
+                const unsubHistory = csHistoryCol.orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
+                    setCsHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                });
+
+                return () => { unsubTasks(); unsubCs(); unsubHistory(); };
             }, [user, isLoggedIn]);
 
             useEffect(() => { if (window.lucide) window.lucide.createIcons(); });
@@ -236,6 +262,10 @@
                 setIsModalOpen(false);
             };
 
+            const deleteCustomer = async (id) => {
+                await csCol.doc(id).delete();
+            };
+
             const getNextMonday7AM = (fromDate) => {
                 const date = new Date(fromDate);
                 const day = date.getDay();
@@ -291,6 +321,72 @@
                 return dueDate <= today;
             };
 
+            const getWeekString = () => {
+                const d = new Date();
+                d.setHours(0,0,0,0);
+                d.setDate(d.getDate() + 4 - (d.getDay()||7));
+                const yearStart = new Date(d.getFullYear(),0,1);
+                const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1)/7);
+                return `Week ${weekNo}, ${d.getFullYear()}`;
+            };
+
+            const formatDisplayWeek = (weekName) => {
+                if (!weekName) return '';
+                return lang === 'VN' ? weekName.replace('Week', 'Tuần') : weekName;
+            };
+
+            const closeWeek = async () => {
+                if (username !== MANAGER_NAME) return;
+                const weekStr = getWeekString();
+                
+                // Lưu trữ dữ liệu snapshot hiện tại vào lịch sử
+                await csHistoryCol.add({
+                    weekName: weekStr,
+                    createdAt: Date.now(),
+                    customersData: customers
+                });
+
+                // Reset lại toàn bộ data hiện tại (về mức Stable và bỏ comment)
+                const batch = db.batch();
+                customers.forEach(cs => {
+                    const ref = csCol.doc(cs.id);
+                    batch.update(ref, {
+                        reviewed: false,
+                        ratings: { workload: 'stable', communication: 'stable', quality: 'stable' },
+                        comments: { workload: '', communication: '', quality: '' }
+                    });
+                });
+                await batch.commit();
+            };
+
+            const getCombinedOverviewData = () => {
+                const counts = [
+                    { id: 'stable', name: 'Stable', workload: 0, communication: 0, quality: 0, workloadClients: [], communicationClients: [], qualityClients: [] },
+                    { id: 'at-risk', name: 'At-risk', workload: 0, communication: 0, quality: 0, workloadClients: [], communicationClients: [], qualityClients: [] },
+                    { id: 'critical', name: 'Critical', workload: 0, communication: 0, quality: 0, workloadClients: [], communicationClients: [], qualityClients: [] }
+                ];
+                
+                const dataToUse = selectedWeekId === 'current' 
+                    ? customers 
+                    : (csHistory.find(h => h.id === selectedWeekId)?.customersData || []);
+                    
+                dataToUse.forEach(cs => {
+                    if (cs.ratings) {
+                        const sl = counts.find(c => c.id === cs.ratings.workload);
+                        if (sl) { sl.workload++; sl.workloadClients.push(cs.name); }
+                        const cl = counts.find(c => c.id === cs.ratings.communication);
+                        if (cl) { cl.communication++; cl.communicationClients.push(cs.name); }
+                        const ql = counts.find(c => c.id === cs.ratings.quality);
+                        if (ql) { ql.quality++; ql.qualityClients.push(cs.name); }
+                    }
+                });
+                
+                return counts.map(c => ({
+                    ...c,
+                    total: c.workload + c.communication + c.quality
+                }));
+            };
+
             if (!isLoggedIn) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
@@ -298,7 +394,7 @@
                             <h2 className="text-2xl font-black mb-8 uppercase tracking-tighter text-slate-800">{t.verify}</h2>
                             <div className="grid gap-3">
                                 {TEAM_MEMBERS.map(m => (
-                                    <button key={m} onClick={() => handleLogin(m)} className="py-4 bg-slate-50 border-2 border-transparent hover:border-blue-500 rounded-2xl font-bold transition-all text-slate-600">{m} {m === MANAGER_NAME ? "(Mgr)" : ""}</button>
+                                    <button key={m} onClick={() => handleLogin(m)} className="py-4 bg-slate-50 border-2 border-transparent hover:border-blue-500 rounded-2xl font-bold transition-all text-slate-600">{m} {m === MANAGER_NAME ? t.mgr : ""}</button>
                                 ))}
                             </div>
                         </div>
@@ -310,36 +406,42 @@
                 return (
                     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6">
                         <div className="text-center mb-12">
-                            <h2 className="text-4xl font-black uppercase tracking-tighter text-slate-900 mb-2">Workspace Choice</h2>
-                            <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Logged in as {username}</p>
+                            <h2 className="text-4xl font-black uppercase tracking-tighter text-slate-900 mb-2">{t.workspace_choice}</h2>
+                            <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">{t.logged_in_as} {username}</p>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl">
                             <div onClick={() => setActiveHub('task')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-blue-600 cursor-pointer transition-all shadow-xl flex flex-col items-center">
                                 <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
                                     <i data-lucide="layout-dashboard" className="text-white"></i>
                                 </div>
-                                <h3 className="text-xl font-black uppercase text-slate-800">Task Hub Pro</h3>
+                                <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.task_hub_title}</h3>
                             </div>
                             <div onClick={() => setActiveHub('cs')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-emerald-600 cursor-pointer transition-all shadow-xl flex flex-col items-center">
                                 <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
                                     <i data-lucide="users" className="text-white"></i>
                                 </div>
-                                <h3 className="text-xl font-black uppercase text-slate-800">CS Hub</h3>
+                                <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.cs_title}</h3>
+                            </div>
+                            <div onClick={() => setActiveHub('overview')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-purple-600 cursor-pointer transition-all shadow-xl flex flex-col items-center">
+                                <div className="w-16 h-16 bg-purple-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
+                                    <i data-lucide="bar-chart-2" className="text-white"></i>
+                                </div>
+                                <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.overview_hub}</h3>
                             </div>
                         </div>
-                        <button onClick={handleLogout} className="mt-12 text-slate-400 hover:text-red-500 font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-colors"><i data-lucide="log-out" className="w-4 h-4"></i> Sign Out</button>
+                        <button onClick={handleLogout} className="mt-12 text-slate-400 hover:text-red-500 font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-colors"><i data-lucide="log-out" className="w-4 h-4"></i> {t.sign_out}</button>
                     </div>
                 );
             }
 
             return (
                 <div className="min-h-screen flex flex-col h-screen overflow-hidden">
-                    <header className={`${activeHub === 'task' ? 'bg-header' : 'bg-cs-header'} text-white px-6 py-4 flex justify-between items-center shadow-xl z-50`}>
+                    <header className={`${activeHub === 'task' ? 'bg-header' : activeHub === 'cs' ? 'bg-cs-header' : 'bg-gradient-to-r from-purple-900 to-indigo-900'} text-white px-6 py-4 flex justify-between items-center shadow-xl z-50`}>
                         <div className="flex items-center gap-4">
                             <button onClick={() => setActiveHub(null)} title={t.back} className="p-2 hover:bg-white/10 rounded-full transition-colors flex items-center justify-center">
                                 <i data-lucide="arrow-left" className="w-5 h-5"></i>
                             </button>
-                            <h1 className="text-lg font-black uppercase tracking-tighter">{activeHub === 'task' ? 'Task Hub Pro' : t.cs_title}</h1>
+                            <h1 className="text-lg font-black uppercase tracking-tighter">{activeHub === 'task' ? t.task_hub_title : activeHub === 'cs' ? t.cs_title : t.overview_hub}</h1>
                         </div>
                         
                         <div className="flex gap-3 items-center">
@@ -365,13 +467,29 @@
                                     <button onClick={() => setView('board')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${view==='board'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.board}</button>
                                     <button onClick={() => setView('calendar')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${view==='calendar'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.calendar}</button>
                                 </div>
-                            ) : (
+                            ) : activeHub === 'cs' ? (
                                 <div className="flex bg-white/10 rounded-xl p-1 border border-white/10">
                                     <button onClick={() => setCsView('grid')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${csView==='grid'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.grid}</button>
                                     <button onClick={() => setCsView('list')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${csView==='list'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.list}</button>
                                 </div>
+                            ) : (
+                                <div className="flex bg-white/10 rounded-xl p-1 border border-white/10">
+                                    <select 
+                                        value={selectedWeekId} 
+                                        onChange={(e) => setSelectedWeekId(e.target.value)}
+                                        className="bg-transparent text-white text-[10px] font-bold uppercase outline-none px-2 py-1 cursor-pointer"
+                                    >
+                                        <option value="current" className="text-slate-900">{t.current_week}</option>
+                                        {csHistory.map(h => <option key={h.id} value={h.id} className="text-slate-900">{formatDisplayWeek(h.weekName)}</option>)}
+                                    </select>
+                                </div>
                             )}
-                            <button onClick={() => setIsModalOpen(true)} className={`${activeHub === 'task' ? 'bg-blue-600' : 'bg-emerald-600'} hover:opacity-80 px-4 py-1.5 rounded-lg font-black text-[10px] transition-all uppercase`}>{t.new}</button>
+                            {activeHub === 'cs' && username === MANAGER_NAME && (
+                                <button onClick={closeWeek} className="bg-amber-600 hover:opacity-80 px-4 py-1.5 rounded-lg font-black text-[10px] transition-all uppercase text-white shadow-md">{t.close_week}</button>
+                            )}
+                            {activeHub !== 'overview' && (
+                                <button onClick={() => setIsModalOpen(true)} className={`${activeHub === 'task' ? 'bg-blue-600' : 'bg-emerald-600'} hover:opacity-80 px-4 py-1.5 rounded-lg font-black text-[10px] transition-all uppercase`}>{t.new}</button>
+                            )}
                             <span className="text-[10px] font-bold bg-white/10 px-3 py-1.5 rounded-lg border border-white/20 uppercase tracking-widest">{username}</span>
                         </div>
                     </header>
@@ -406,7 +524,7 @@
                                                                 <span className={nearDeadline ? "text-red-600 font-bold" : "text-slate-400"}>{task.dueDate}</span>
                                                             </div>
                                                             <div className="mb-4 bg-black/5 p-2 rounded-xl">
-                                                                <div className="flex justify-between items-center mb-1.5"><span className="text-[8px] font-black uppercase text-slate-400">Progress</span><span className="text-[10px] font-black text-blue-700">{currentProgress}%</span></div>
+                                                                <div className="flex justify-between items-center mb-1.5"><span className="text-[8px] font-black uppercase text-slate-400">{t.progress}</span><span className="text-[10px] font-black text-blue-700">{currentProgress}%</span></div>
                                                                 <div className="flex gap-0.5">
                                                                     {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(val => (
                                                                         <div key={val} onClick={() => updateTaskProgress(task, val)} className={`flex-1 h-4 rounded-sm cursor-pointer border ${val <= currentProgress ? 'bg-blue-600 border-blue-700' : 'bg-white/60 border-transparent'}`}></div>
@@ -439,28 +557,35 @@
                                     </div>
                                 </div>
                             )
-                        ) : (
+                        ) : activeHub === 'cs' ? (
                             csView === 'grid' ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-10 h-full">
                                     {filteredCustomers.map(cs => {
                                         const colors = ASSIGNEE_COLORS[cs.tlInCharge] || ASSIGNEE_COLORS.Default;
                                         return (
                                             <div key={cs.id} className={`cs-card bg-white rounded-[32px] p-6 border-2 shadow-sm relative flex flex-col ${cs.reviewed ? 'opacity-60 grayscale-[0.5]' : ''}`} style={{ borderColor: colors.border }}>
-                                                {cs.status === 'Trial' && <div className="absolute top-4 right-4 bg-red-700 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-tighter shadow-md z-10">TRIAL</div>}
+                                                {cs.status === 'Trial' && <div className="absolute top-4 right-4 bg-red-700 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-tighter shadow-md z-10">{t.trial}</div>}
                                                 <div className="mb-4"><h3 className="text-base font-black text-slate-800 uppercase tracking-tighter leading-tight">{cs.name}</h3><p className="text-[9px] font-bold text-slate-400 uppercase">{cs.region} • {cs.products}</p></div>
                                                 <div className="flex items-center gap-2 mb-6 p-2 rounded-xl" style={{ backgroundColor: colors.bg }}><div className="w-1.5 h-4 rounded-full" style={{ backgroundColor: colors.accent }}></div><span className="text-[10px] font-black uppercase" style={{ color: colors.text }}>{cs.tlInCharge}</span></div>
                                                 <div className="space-y-6 flex-1">
                                                     {['workload', 'communication', 'quality'].map(field => (
                                                         <div key={field} className="space-y-2">
-                                                            <div className="flex justify-between items-center"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{field}</span><span className={`text-[9px] font-black uppercase ${RATING_LEVELS.find(l => l.id === cs.ratings[field])?.color}`}>{cs.ratings[field]}</span></div>
+                                                            <div className="flex justify-between items-center"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{t[field]}</span><span className={`text-[9px] font-black uppercase ${RATING_LEVELS.find(l => l.id === cs.ratings[field])?.color}`}>{cs.ratings[field]}</span></div>
                                                             <div className="grid grid-cols-3 gap-1">{RATING_LEVELS.map(lv => (<button key={lv.id} onClick={() => updateCsRating(cs.id, field, lv.id)} className={`py-1.5 rounded-lg text-[8px] font-black border-2 transition-all ${cs.ratings[field] === lv.id ? `${lv.bg} ${lv.border} ${lv.color}` : 'bg-slate-50 border-slate-50 text-slate-300 hover:border-slate-200'}`}>{lv.label}</button>))}</div>
-                                                            {(cs.ratings[field] === 'at-risk' || cs.ratings[field] === 'critical') && (<textarea className="w-full p-2 bg-red-50/50 border border-red-100 rounded-xl text-[10px] font-medium text-slate-600 focus:ring-1 focus:ring-red-200" placeholder="Reason..." rows="2" value={cs.comments?.[field] || ''} onChange={(e) => updateCsComment(cs.id, field, e.target.value)} />)}
+                                                            {(cs.ratings[field] === 'at-risk' || cs.ratings[field] === 'critical') && (<textarea className="w-full p-2 bg-red-50/50 border border-red-100 rounded-xl text-[10px] font-medium text-slate-600 focus:ring-1 focus:ring-red-200" placeholder={t.reason} rows="2" value={cs.comments?.[field] || ''} onChange={(e) => updateCsComment(cs.id, field, e.target.value)} />)}
                                                         </div>
                                                     ))}
                                                 </div>
                                                 <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
                                                     <div className="flex items-center gap-2">{cs.reviewed && <i data-lucide="check-circle" className="w-4 h-4 text-emerald-500"></i>}<span className={`text-[9px] font-black uppercase ${cs.reviewed ? 'text-emerald-600' : 'text-slate-300'}`}>{cs.reviewed ? t.reviewed : t.waiting}</span></div>
-                                                    {username === MANAGER_NAME && <button onClick={() => markAsReviewed(cs)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${cs.reviewed ? 'bg-slate-100 text-slate-400' : 'bg-emerald-600 text-white shadow-md hover:bg-emerald-700'}`}>{cs.reviewed ? t.reset : t.confirm}</button>}
+                                                    <div className="flex items-center gap-2">
+                                                        {checkPermission(cs) && (
+                                                            <button onClick={() => deleteCustomer(cs.id)} className="p-1.5 rounded-lg text-slate-300 hover:bg-red-50 hover:text-red-500 transition-all" title={t.delete_client}>
+                                                                <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                                            </button>
+                                                        )}
+                                                        {username === MANAGER_NAME && <button onClick={() => markAsReviewed(cs)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${cs.reviewed ? 'bg-slate-100 text-slate-400' : 'bg-emerald-600 text-white shadow-md hover:bg-emerald-700'}`}>{cs.reviewed ? t.reset : t.confirm}</button>}
+                                                    </div>
                                                 </div>
                                             </div>
                                         );
@@ -472,12 +597,12 @@
                                         <table className="w-full text-left border-collapse">
                                             <thead>
                                                 <tr className="bg-slate-900 text-white sticky top-0 z-20">
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">Client Info</th>
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">Assignee</th>
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">Workload</th>
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">Comm.</th>
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">Quality</th>
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 text-right">Actions</th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">{t.client_info}</th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">{t.assignee}</th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">{t.workload}</th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">{t.communication}</th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">{t.quality}</th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 text-right">{t.actions}</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
@@ -489,7 +614,7 @@
                                                                 <div className="flex flex-col">
                                                                     <div className="flex items-center gap-2">
                                                                         <span className="text-sm font-black text-slate-800 uppercase leading-none">{cs.name}</span>
-                                                                        {cs.status === 'Trial' && <span className="bg-red-700 text-white text-[7px] font-black px-1.5 py-0.5 rounded leading-none">TRIAL</span>}
+                                                                        {cs.status === 'Trial' && <span className="bg-red-700 text-white text-[7px] font-black px-1.5 py-0.5 rounded leading-none">{t.trial}</span>}
                                                                     </div>
                                                                     <span className="text-[9px] font-bold text-slate-400 uppercase mt-1">{cs.region} • {cs.products}</span>
                                                                 </div>
@@ -510,7 +635,7 @@
                                                                         {(cs.ratings[field] === 'at-risk' || cs.ratings[field] === 'critical') && (
                                                                             <input 
                                                                                 className="p-1.5 bg-red-50/50 border-b border-red-100 text-[8px] font-medium text-slate-600 focus:outline-none min-w-[120px]" 
-                                                                                placeholder="Note..."
+                                                                                placeholder={t.note}
                                                                                 value={cs.comments?.[field] || ''} 
                                                                                 onChange={(e) => updateCsComment(cs.id, field, e.target.value)}
                                                                             />
@@ -521,6 +646,11 @@
                                                             <td className="px-6 py-4 text-right">
                                                                 <div className="flex items-center justify-end gap-3">
                                                                     {cs.reviewed && <i data-lucide="check-circle" className="w-4 h-4 text-emerald-500"></i>}
+                                                                    {checkPermission(cs) && (
+                                                                        <button onClick={() => deleteCustomer(cs.id)} className="text-slate-300 hover:text-red-500 transition-all" title={t.delete_client}>
+                                                                            <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                                                        </button>
+                                                                    )}
                                                                     {username === MANAGER_NAME && (
                                                                         <button 
                                                                             onClick={() => markAsReviewed(cs)} 
@@ -539,14 +669,81 @@
                                     </div>
                                 </div>
                             )
-                        )}
+                        ) : activeHub === 'overview' ? (
+                            <div className="h-full overflow-y-auto pb-10">
+                                <div className="mb-6 flex justify-between items-end">
+                                    <div>
+                                        <h2 className="text-2xl font-black uppercase text-slate-800 tracking-tighter">{t.client_ratings_overview}</h2>
+                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{t.aggregated_from} ({selectedWeekId === 'current' ? t.current_week : formatDisplayWeek(csHistory.find(h => h.id === selectedWeekId)?.weekName)})</p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-4">
+                                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-blue-500"></div><span className="text-[10px] font-black uppercase text-slate-600">{t.workload}</span></div>
+                                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-purple-500"></div><span className="text-[10px] font-black uppercase text-slate-600">{t.communication}</span></div>
+                                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-pink-500"></div><span className="text-[10px] font-black uppercase text-slate-600">{t.quality}</span></div>
+                                    </div>
+                                </div>
+                                <div className="bg-white p-8 rounded-[32px] shadow-sm border border-slate-100 flex flex-col h-[400px]">
+                                    {(() => {
+                                        const data = getCombinedOverviewData();
+                                        const maxCount = Math.max(...data.map(d => d.total), 5); 
+                                        
+                                        return (
+                                            <div className="flex-1 w-full min-h-0 relative flex items-end justify-around pb-6 pt-10 border-b-2 border-slate-100">
+                                                {data.map(item => (
+                                                    <div key={item.name} className="flex flex-col items-center w-1/4 md:w-1/5 h-full justify-end relative">
+                                                        <span className="absolute -top-6 text-sm font-black text-slate-700">{item.total > 0 ? item.total : ''}</span>
+                                                        <div 
+                                                            className="w-full flex flex-col justify-end gap-[1px] rounded-t-xl overflow-visible shadow-sm"
+                                                            style={{ 
+                                                                height: `${(item.total / maxCount) * 100}%`, 
+                                                                minHeight: item.total > 0 ? '16px' : '4px',
+                                                                backgroundColor: item.total === 0 ? '#f1f5f9' : 'transparent'
+                                                            }}
+                                                        >
+                                                            {item.quality > 0 && (
+                                                                <div style={{ height: `${(item.quality / item.total) * 100}%` }} className="bg-pink-500 w-full relative group/tt hover:opacity-90 cursor-pointer transition-all flex items-center justify-center text-[10px] text-white font-bold">
+                                                                    {item.quality}
+                                                                    <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50">
+                                                                        <strong className="text-pink-300 block mb-1 border-b border-slate-600 pb-1">{t.quality}</strong>
+                                                                        <span className="font-normal">{item.qualityClients.join(', ')}</span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {item.communication > 0 && (
+                                                                <div style={{ height: `${(item.communication / item.total) * 100}%` }} className="bg-purple-500 w-full relative group/tt hover:opacity-90 cursor-pointer transition-all flex items-center justify-center text-[10px] text-white font-bold">
+                                                                    {item.communication}
+                                                                    <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50">
+                                                                        <strong className="text-purple-300 block mb-1 border-b border-slate-600 pb-1">{t.communication}</strong>
+                                                                        <span className="font-normal">{item.communicationClients.join(', ')}</span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {item.workload > 0 && (
+                                                                <div style={{ height: `${(item.workload / item.total) * 100}%` }} className="bg-blue-500 w-full relative group/tt hover:opacity-90 cursor-pointer transition-all flex items-center justify-center text-[10px] text-white font-bold rounded-b-sm">
+                                                                    {item.workload}
+                                                                    <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50">
+                                                                        <strong className="text-blue-300 block mb-1 border-b border-slate-600 pb-1">{t.workload}</strong>
+                                                                        <span className="font-normal">{item.workloadClients.join(', ')}</span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <span className="absolute -bottom-8 text-xs font-black text-slate-500 uppercase tracking-tighter whitespace-nowrap">{item.name}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+                        ) : null}
                     </main>
 
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
                             <div className="bg-white p-8 rounded-[40px] w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
                                 <div className="flex justify-between items-center mb-6">
-                                    <h3 className="text-xl font-black uppercase text-slate-800">{activeHub === 'task' ? 'New Task' : 'Add Client'}</h3>
+                                    <h3 className="text-xl font-black uppercase text-slate-800">{activeHub === 'task' ? t.new_task : t.add_client}</h3>
                                     <button onClick={() => setIsModalOpen(false)} className="text-slate-300 hover:text-slate-900"><i data-lucide="x" className="w-6 h-6"></i></button>
                                 </div>
                                 {activeHub === 'task' ? (
@@ -561,12 +758,12 @@
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
-                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Client Name</label><input className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold text-sm outline-none" placeholder="Enter name..." value={newCsName} onChange={e => setNewCsName(e.target.value)} /></div>
-                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Status</label><div className="flex gap-2 p-1 bg-slate-50 rounded-xl border border-slate-100">{['Invoiced', 'Trial'].map(s => (<button key={s} onClick={() => setNewCsStatus(s)} className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${newCsStatus === s ? (s === 'Trial' ? 'bg-red-700 text-white shadow-md' : 'bg-slate-900 text-white shadow-md') : 'text-slate-400 hover:text-slate-600'}`}>{s}</button>))}</div></div>
-                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Region</label><select className="w-full px-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-xs outline-none cursor-pointer" value={newCsRegion} onChange={e => setNewCsRegion(e.target.value)}>{REGIONS.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
-                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Products</label><div className="grid grid-cols-1 gap-2 bg-slate-50 p-4 rounded-2xl border border-slate-100 max-h-40 overflow-y-auto">{PRODUCTS.map(prod => (<label key={prod} className="flex items-center gap-3 cursor-pointer group"><input type="checkbox" className="w-5 h-5 rounded-lg border-2 border-slate-200 text-emerald-600" checked={selectedProducts.includes(prod)} onChange={() => toggleProduct(prod)}/><span className={`text-[11px] font-bold uppercase transition-colors ${selectedProducts.includes(prod) ? 'text-emerald-700' : 'text-slate-500'}`}>{prod}</span></label>))}</div></div>
-                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">TL In Charge</label><select className="w-full px-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-xs outline-none cursor-pointer" value={newCsTL} onChange={e => setNewCsTL(e.target.value)}>{TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
-                                        <button onClick={createCustomer} className="w-full py-5 bg-emerald-600 text-white rounded-[24px] font-black uppercase text-sm tracking-widest shadow-lg hover:bg-emerald-500 transition-all mt-4">Deploy Client</button>
+                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.client_name}</label><input className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold text-sm outline-none" placeholder={t.enter_name} value={newCsName} onChange={e => setNewCsName(e.target.value)} /></div>
+                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.status_label}</label><div className="flex gap-2 p-1 bg-slate-50 rounded-xl border border-slate-100">{['Invoiced', 'Trial'].map(s => (<button key={s} onClick={() => setNewCsStatus(s)} className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${newCsStatus === s ? (s === 'Trial' ? 'bg-red-700 text-white shadow-md' : 'bg-slate-900 text-white shadow-md') : 'text-slate-400 hover:text-slate-600'}`}>{s === 'Trial' ? t.trial : s}</button>))}</div></div>
+                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.region}</label><select className="w-full px-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-xs outline-none cursor-pointer" value={newCsRegion} onChange={e => setNewCsRegion(e.target.value)}>{REGIONS.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
+                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.products}</label><div className="grid grid-cols-1 gap-2 bg-slate-50 p-4 rounded-2xl border border-slate-100 max-h-40 overflow-y-auto">{PRODUCTS.map(prod => (<label key={prod} className="flex items-center gap-3 cursor-pointer group"><input type="checkbox" className="w-5 h-5 rounded-lg border-2 border-slate-200 text-emerald-600" checked={selectedProducts.includes(prod)} onChange={() => toggleProduct(prod)}/><span className={`text-[11px] font-bold uppercase transition-colors ${selectedProducts.includes(prod) ? 'text-emerald-700' : 'text-slate-500'}`}>{prod}</span></label>))}</div></div>
+                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.tl_in_charge}</label><select className="w-full px-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-xs outline-none cursor-pointer" value={newCsTL} onChange={e => setNewCsTL(e.target.value)}>{TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                                        <button onClick={createCustomer} className="w-full py-5 bg-emerald-600 text-white rounded-[24px] font-black uppercase text-sm tracking-widest shadow-lg hover:bg-emerald-500 transition-all mt-4">{t.deploy_client}</button>
                                     </div>
                                 )}
                             </div>
