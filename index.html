@@ -94,7 +94,7 @@
             const [customers, setCustomers] = useState([]);
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [view, setView] = useState('board');
-            const [csView, setCsView] = useState('list'); // Default is list view
+            const [csView, setCsView] = useState('grid');
             const [searchQuery, setSearchQuery] = useState('');
             const [csHistory, setCsHistory] = useState([]);
             const [selectedWeekId, setSelectedWeekId] = useState('current');
@@ -210,7 +210,7 @@
 
             const checkPermission = (item) => {
                 if (username === MANAGER_NAME) return true;
-                if (username === "Guest") return false; // Guest cannot modify
+                if (username === "Guest") return false;
                 if (item.createdBy === username || item.assignee === username || item.tlInCharge === username) return true;
                 return false;
             };
@@ -391,12 +391,12 @@
 
             if (!isLoggedIn) {
                 return (
-                    <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
-                        <div className="bg-white p-10 rounded-[40px] shadow-2xl w-full max-w-sm text-center">
+                    <div className="min-h-screen flex items-center justify-center bg-[#0033a0] p-4 relative">
+                        <div className="bg-white p-10 rounded-[40px] shadow-2xl w-full max-w-sm text-center z-10">
                             <h2 className="text-2xl font-black mb-8 uppercase tracking-tighter text-slate-800">{t.verify}</h2>
                             <div className="grid gap-3">
                                 {[...TEAM_MEMBERS, "Guest"].map(m => (
-                                    <button key={m} onClick={() => handleLogin(m)} className="py-4 bg-slate-50 border-2 border-transparent hover:border-blue-500 rounded-2xl font-bold transition-all text-slate-600">{m} {m === MANAGER_NAME ? t.mgr : ""}</button>
+                                    <button key={m} onClick={() => handleLogin(m)} className="py-4 bg-slate-50 border-2 border-transparent hover:border-blue-500 rounded-2xl font-bold transition-all text-slate-600 shadow-sm">{m} {m === MANAGER_NAME ? t.mgr : ""}</button>
                                 ))}
                             </div>
                         </div>
@@ -406,32 +406,32 @@
 
             if (!activeHub) {
                 return (
-                    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6">
-                        <div className="text-center mb-12">
-                            <h2 className="text-4xl font-black uppercase tracking-tighter text-slate-900 mb-2">{t.workspace_choice}</h2>
-                            <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">{t.logged_in_as} {username}</p>
+                    <div className="min-h-screen flex flex-col items-center justify-center bg-[#0033a0] p-6 relative">
+                        <div className="text-center mb-12 z-10">
+                            <h2 className="text-4xl font-black uppercase tracking-tighter text-white mb-2">{t.workspace_choice}</h2>
+                            <p className="text-blue-200 font-bold text-xs uppercase tracking-widest">{t.logged_in_as} {username}</p>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl">
-                            <div onClick={() => setActiveHub('task')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-blue-600 cursor-pointer transition-all shadow-xl flex flex-col items-center">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl z-10">
+                            <div onClick={() => setActiveHub('task')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-blue-400 cursor-pointer transition-all shadow-xl flex flex-col items-center hover:-translate-y-2">
                                 <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
                                     <i data-lucide="layout-dashboard" className="text-white"></i>
                                 </div>
                                 <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.task_hub_title}</h3>
                             </div>
-                            <div onClick={() => setActiveHub('cs')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-emerald-600 cursor-pointer transition-all shadow-xl flex flex-col items-center">
+                            <div onClick={() => setActiveHub('cs')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-emerald-400 cursor-pointer transition-all shadow-xl flex flex-col items-center hover:-translate-y-2">
                                 <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
                                     <i data-lucide="users" className="text-white"></i>
                                 </div>
                                 <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.cs_title}</h3>
                             </div>
-                            <div onClick={() => setActiveHub('overview')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-purple-600 cursor-pointer transition-all shadow-xl flex flex-col items-center">
+                            <div onClick={() => setActiveHub('overview')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-purple-400 cursor-pointer transition-all shadow-xl flex flex-col items-center hover:-translate-y-2">
                                 <div className="w-16 h-16 bg-purple-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
                                     <i data-lucide="bar-chart-2" className="text-white"></i>
                                 </div>
                                 <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.overview_hub}</h3>
                             </div>
                         </div>
-                        <button onClick={handleLogout} className="mt-12 text-slate-400 hover:text-red-500 font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-colors"><i data-lucide="log-out" className="w-4 h-4"></i> {t.sign_out}</button>
+                        <button onClick={handleLogout} className="mt-12 text-blue-200 hover:text-white font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-colors z-10"><i data-lucide="log-out" className="w-4 h-4"></i> {t.sign_out}</button>
                     </div>
                 );
             }
