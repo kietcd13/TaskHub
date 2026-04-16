@@ -94,7 +94,7 @@
             const [customers, setCustomers] = useState([]);
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [view, setView] = useState('board');
-            const [csView, setCsView] = useState('grid');
+            const [csView, setCsView] = useState('list');
             const [searchQuery, setSearchQuery] = useState('');
             const [csHistory, setCsHistory] = useState([]);
             const [selectedWeekId, setSelectedWeekId] = useState('current');
@@ -392,6 +392,9 @@
             if (!isLoggedIn) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-[#0033a0] p-4 relative">
+                        <div className="absolute top-8 left-10">
+                            <span className="font-bold text-white text-5xl tracking-tight select-none">MiTek<sup className="text-2xl font-semibold">®</sup></span>
+                        </div>
                         <div className="bg-white p-10 rounded-[40px] shadow-2xl w-full max-w-sm text-center z-10">
                             <h2 className="text-2xl font-black mb-8 uppercase tracking-tighter text-slate-800">{t.verify}</h2>
                             <div className="grid gap-3">
@@ -686,7 +689,7 @@
                                         <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-pink-500"></div><span className="text-[10px] font-black uppercase text-slate-600">{t.quality}</span></div>
                                     </div>
                                 </div>
-                                <div className="bg-white p-8 rounded-[32px] shadow-sm border border-slate-100 flex flex-col h-[400px]">
+                                <div className="bg-white p-8 rounded-[32px] shadow-sm border border-slate-100 flex flex-col h-[calc(100vh-220px)] min-h-[500px]">
                                     {(() => {
                                         const data = getCombinedOverviewData();
                                         const maxCount = Math.max(...data.map(d => d.total), 5); 
@@ -694,45 +697,46 @@
                                         return (
                                             <div className="flex-1 w-full min-h-0 relative flex items-end justify-around pb-6 pt-10 border-b-2 border-slate-100">
                                                 {data.map(item => (
-                                                    <div key={item.name} className="flex flex-col items-center w-1/4 md:w-1/5 h-full justify-end relative">
-                                                        <span className="absolute -top-6 text-sm font-black text-slate-700">{item.total > 0 ? item.total : ''}</span>
+                                                    <div key={item.name} className="flex flex-col items-center w-1/3 md:w-1/4 h-full justify-end relative group">
+                                                        <span className="absolute -top-8 text-lg font-black text-slate-700">{item.total > 0 ? item.total : ''}</span>
                                                         <div 
-                                                            className="w-full flex flex-col justify-end gap-[1px] rounded-t-xl overflow-visible shadow-sm"
+                                                            className="w-full flex flex-col justify-end drop-shadow-2xl rounded-t-[20px] rounded-b-md overflow-hidden"
                                                             style={{ 
                                                                 height: `${(item.total / maxCount) * 100}%`, 
-                                                                minHeight: item.total > 0 ? '16px' : '4px',
-                                                                backgroundColor: item.total === 0 ? '#f1f5f9' : 'transparent'
+                                                                minHeight: item.total > 0 ? '24px' : '4px',
+                                                                backgroundColor: item.total === 0 ? '#f1f5f9' : 'transparent',
+                                                                boxShadow: item.total > 0 ? '0 15px 30px -5px rgba(0,0,0,0.3)' : 'none'
                                                             }}
                                                         >
                                                             {item.quality > 0 && (
-                                                                <div style={{ height: `${(item.quality / item.total) * 100}%` }} className="bg-pink-500 w-full relative group/tt hover:opacity-90 cursor-pointer transition-all flex items-center justify-center text-[10px] text-white font-bold">
+                                                                <div style={{ height: `${(item.quality / item.total) * 100}%` }} className="bg-gradient-to-r from-pink-600 via-pink-400 to-pink-700 shadow-[inset_-8px_0_10px_rgba(0,0,0,0.25),inset_8px_0_10px_rgba(255,255,255,0.3)] border-t border-white/30 w-full relative group/tt hover:opacity-95 cursor-pointer transition-all flex items-center justify-center text-[12px] text-white font-black">
                                                                     {item.quality}
-                                                                    <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50">
+                                                                    <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50 shadow-xl border border-slate-700">
                                                                         <strong className="text-pink-300 block mb-1 border-b border-slate-600 pb-1">{t.quality}</strong>
                                                                         <span className="font-normal">{item.qualityClients.join(', ')}</span>
                                                                     </div>
                                                                 </div>
                                                             )}
                                                             {item.communication > 0 && (
-                                                                <div style={{ height: `${(item.communication / item.total) * 100}%` }} className="bg-purple-500 w-full relative group/tt hover:opacity-90 cursor-pointer transition-all flex items-center justify-center text-[10px] text-white font-bold">
+                                                                <div style={{ height: `${(item.communication / item.total) * 100}%` }} className="bg-gradient-to-r from-purple-600 via-purple-400 to-purple-700 shadow-[inset_-8px_0_10px_rgba(0,0,0,0.25),inset_8px_0_10px_rgba(255,255,255,0.3)] border-t border-white/30 w-full relative group/tt hover:opacity-95 cursor-pointer transition-all flex items-center justify-center text-[12px] text-white font-black">
                                                                     {item.communication}
-                                                                    <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50">
+                                                                    <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50 shadow-xl border border-slate-700">
                                                                         <strong className="text-purple-300 block mb-1 border-b border-slate-600 pb-1">{t.communication}</strong>
                                                                         <span className="font-normal">{item.communicationClients.join(', ')}</span>
                                                                     </div>
                                                                 </div>
                                                             )}
                                                             {item.workload > 0 && (
-                                                                <div style={{ height: `${(item.workload / item.total) * 100}%` }} className="bg-blue-500 w-full relative group/tt hover:opacity-90 cursor-pointer transition-all flex items-center justify-center text-[10px] text-white font-bold rounded-b-sm">
+                                                                <div style={{ height: `${(item.workload / item.total) * 100}%` }} className="bg-gradient-to-r from-blue-600 via-blue-400 to-blue-700 shadow-[inset_-8px_0_10px_rgba(0,0,0,0.25),inset_8px_0_10px_rgba(255,255,255,0.3)] border-t border-white/30 w-full relative group/tt hover:opacity-95 cursor-pointer transition-all flex items-center justify-center text-[12px] text-white font-black rounded-b-md">
                                                                     {item.workload}
-                                                                    <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50">
+                                                                    <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50 shadow-xl border border-slate-700">
                                                                         <strong className="text-blue-300 block mb-1 border-b border-slate-600 pb-1">{t.workload}</strong>
                                                                         <span className="font-normal">{item.workloadClients.join(', ')}</span>
                                                                     </div>
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        <span className="absolute -bottom-8 text-xs font-black text-slate-500 uppercase tracking-tighter whitespace-nowrap">{item.name}</span>
+                                                        <span className="absolute -bottom-8 text-sm font-black text-slate-500 uppercase tracking-tighter whitespace-nowrap">{item.name}</span>
                                                     </div>
                                                 ))}
                                             </div>
