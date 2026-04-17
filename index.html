@@ -82,7 +82,20 @@
 
         const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'taskhub-pro-v1';
 
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // Component để quản lý Icon an toàn hơn, tránh lỗi removeChild của React
+        function LucideIcon({ name, className = "" }) {
+            const containerRef = useRef(null);
+            useEffect(() => {
+                if (window.lucide && containerRef.current) {
+                    window.lucide.createIcons({
+                        root: containerRef.current
+                    });
+                }
+            }); // Re-run để đảm bảo khi icon name thay đổi hoặc re-render icon vẫn hiện
+            return <span ref={containerRef} className="inline-flex items-center justify-center shrink-0"><i data-lucide={name} className={className}></i></span>;
+        }
 
         function App() {
             const [activeHub, setActiveHub] = useState(null); 
@@ -98,6 +111,7 @@
             const [searchQuery, setSearchQuery] = useState('');
             const [csHistory, setCsHistory] = useState([]);
             const [selectedWeekId, setSelectedWeekId] = useState('current');
+            const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
             
             // Task Form States
             const [newTitle, setNewTitle] = useState('');
@@ -182,9 +196,11 @@
                     const filtered = all.filter(task => {
                         if (task.status === 'cancelled') return false;
                         if (task.status === 'done' && task.completedAt) {
-                            return (now - task.completedAt) < threeDaysMs;
+                            if ((now - task.completedAt) >= threeDaysMs) return false;
                         }
-                        return shouldShowTask(task);
+                        if (!shouldShowTask(task)) return false;
+                        if (username === MANAGER_NAME) return true;
+                        return task.assignee === username || task.assignee === MANAGER_NAME;
                     });
                     
                     filtered.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
@@ -200,13 +216,41 @@
                 });
 
                 return () => { unsubTasks(); unsubCs(); unsubHistory(); };
-            }, [user, isLoggedIn]);
-
-            useEffect(() => { if (window.lucide) window.lucide.createIcons(); });
+            }, [user, isLoggedIn, username]);
 
             const filteredCustomers = useMemo(() => {
-                return customers.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
-            }, [customers, searchQuery]);
+                let result = customers.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+                
+                if (sortConfig.key) {
+                    const ratingMap = { 'stable': 0, 'at-risk': 1, 'critical': 2 };
+                    
+                    result.sort((a, b) => {
+                        let aVal, bVal;
+                        
+                        if (sortConfig.key.startsWith('ratings.')) {
+                            const field = sortConfig.key.split('.')[1];
+                            aVal = ratingMap[a.ratings[field]] ?? -1;
+                            bVal = ratingMap[b.ratings[field]] ?? -1;
+                        } else {
+                            aVal = (a[sortConfig.key] || "").toString().toLowerCase();
+                            bVal = (b[sortConfig.key] || "").toString().toLowerCase();
+                        }
+
+                        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+                return result;
+            }, [customers, searchQuery, sortConfig]);
+
+            const requestSort = (key) => {
+                let direction = 'asc';
+                if (sortConfig.key === key && sortConfig.direction === 'asc') {
+                    direction = 'desc';
+                }
+                setSortConfig({ key, direction });
+            };
 
             const checkPermission = (item) => {
                 if (username === MANAGER_NAME) return true;
@@ -268,15 +312,6 @@
                 await csCol.doc(id).delete();
             };
 
-            const getNextMonday7AM = (fromDate) => {
-                const date = new Date(fromDate);
-                const day = date.getDay();
-                const diff = (day === 0 ? 1 : 8 - day); 
-                date.setDate(date.getDate() + diff);
-                date.setHours(7, 0, 0, 0);
-                return date.toISOString();
-            };
-
             const updateTaskProgress = async (task, value) => {
                 if (!checkPermission(task) || username === "Guest") return;
                 let updates = { progress: value };
@@ -286,7 +321,7 @@
                     if (task.isWeekly) {
                         const nextDueDate = new Date(task.dueDate);
                         nextDueDate.setDate(nextDueDate.getDate() + 7);
-                        const nextShowDate = getNextMonday7AM(new Date());
+                        const nextShowDate = (new Date()).toISOString(); 
                         await taskCol.add({ ...task, id: null, status: 'todo', progress: 0, dueDate: nextDueDate.toISOString().split('T')[0], completedAt: null, nextOccurrence: nextShowDate });
                     }
                 } else if (value > 0) updates.status = 'in_progress';
@@ -392,9 +427,6 @@
             if (!isLoggedIn) {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-[#0033a0] p-4 relative">
-                        <div className="absolute top-8 left-10">
-                            <span className="font-bold text-white text-5xl tracking-tight select-none">MiTek<sup className="text-2xl font-semibold">®</sup></span>
-                        </div>
                         <div className="bg-white p-10 rounded-[40px] shadow-2xl w-full max-w-sm text-center z-10">
                             <h2 className="text-2xl font-black mb-8 uppercase tracking-tighter text-slate-800">{t.verify}</h2>
                             <div className="grid gap-3">
@@ -417,24 +449,26 @@
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl z-10">
                             <div onClick={() => setActiveHub('task')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-blue-400 cursor-pointer transition-all shadow-xl flex flex-col items-center hover:-translate-y-2">
                                 <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                                    <i data-lucide="layout-dashboard" className="text-white"></i>
+                                    <LucideIcon name="layout-dashboard" className="text-white w-8 h-8" />
                                 </div>
                                 <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.task_hub_title}</h3>
                             </div>
                             <div onClick={() => setActiveHub('cs')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-emerald-400 cursor-pointer transition-all shadow-xl flex flex-col items-center hover:-translate-y-2">
                                 <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                                    <i data-lucide="users" className="text-white"></i>
+                                    <LucideIcon name="users" className="text-white w-8 h-8" />
                                 </div>
                                 <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.cs_title}</h3>
                             </div>
                             <div onClick={() => setActiveHub('overview')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-purple-400 cursor-pointer transition-all shadow-xl flex flex-col items-center hover:-translate-y-2">
                                 <div className="w-16 h-16 bg-purple-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                                    <i data-lucide="bar-chart-2" className="text-white"></i>
+                                    <LucideIcon name="bar-chart-2" className="text-white w-8 h-8" />
                                 </div>
                                 <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.overview_hub}</h3>
                             </div>
                         </div>
-                        <button onClick={handleLogout} className="mt-12 text-blue-200 hover:text-white font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-colors z-10"><i data-lucide="log-out" className="w-4 h-4"></i> {t.sign_out}</button>
+                        <button onClick={handleLogout} className="mt-12 text-blue-200 hover:text-white font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-colors z-10">
+                            <LucideIcon name="log-out" className="w-4 h-4" /> {t.sign_out}
+                        </button>
                     </div>
                 );
             }
@@ -444,7 +478,7 @@
                     <header className={`${activeHub === 'task' ? 'bg-header' : activeHub === 'cs' ? 'bg-cs-header' : 'bg-gradient-to-r from-purple-900 to-indigo-900'} text-white px-6 py-4 flex justify-between items-center shadow-xl z-50`}>
                         <div className="flex items-center gap-4">
                             <button onClick={() => setActiveHub(null)} title={t.back} className="p-2 hover:bg-white/10 rounded-full transition-colors flex items-center justify-center">
-                                <i data-lucide="arrow-left" className="w-5 h-5"></i>
+                                <LucideIcon name="arrow-left" className="w-5 h-5" />
                             </button>
                             <h1 className="text-lg font-black uppercase tracking-tighter">{activeHub === 'task' ? t.task_hub_title : activeHub === 'cs' ? t.cs_title : t.overview_hub}</h1>
                         </div>
@@ -452,7 +486,7 @@
                         <div className="flex gap-3 items-center">
                             {activeHub === 'cs' && (
                                 <div className="flex items-center bg-white/10 rounded-xl px-3 py-1.5 border border-white/20 gap-2 focus-within:bg-white/20 transition-all">
-                                    <i data-lucide="search" className="w-3.5 h-3.5 text-white/50"></i>
+                                    <LucideIcon name="search" className="w-3.5 h-3.5 text-white/50" />
                                     <input 
                                         type="text" 
                                         className="bg-transparent border-none outline-none text-[11px] font-bold text-white placeholder:text-white/30 w-32 md:w-48" 
@@ -516,14 +550,14 @@
                                                     return (
                                                         <div key={task.id} className="task-card p-4 rounded-2xl shadow-sm border relative" style={{ backgroundColor: colors.bg, borderColor: colors.border }}>
                                                             <div className="absolute -top-3.5 right-2 flex flex-col items-end gap-1.5 z-40">
-                                                                {task.isWeekly && <div className="bg-amber-400 text-amber-900 text-[8px] font-black px-2.5 py-1.5 rounded-md shadow-lg flex items-center gap-1 animate-tag border border-amber-500/30 uppercase tracking-tighter"><i data-lucide="refresh-cw" className="w-2.5 h-2.5"></i>{t.weekly}</div>}
+                                                                {task.isWeekly && <div className="bg-amber-400 text-amber-900 text-[8px] font-black px-2.5 py-1.5 rounded-md shadow-lg flex items-center gap-1 animate-tag border border-amber-500/30 uppercase tracking-tighter"><LucideIcon name="refresh-cw" className="w-2.5 h-2.5" />{t.weekly}</div>}
                                                                 {nearDeadline && (
                                                                     <div className="bg-red-600 text-white text-[8px] font-black px-2.5 py-1.5 rounded-md shadow-lg flex items-center gap-1 uppercase tracking-tighter animate-pulse">
-                                                                        <i data-lucide="alert-triangle" className="w-2.5 h-2.5"></i> {t.deadline}
+                                                                        <LucideIcon name="alert-triangle" className="w-2.5 h-2.5" /> {t.deadline}
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                            <h4 className="font-bold text-slate-800 text-sm leading-tight mb-3 mt-1">{task.title}</h4>
+                                                            <h4 className="font-bold text-slate-800 text-sm mb-3 mt-1 leading-tight">{task.title}</h4>
                                                             <div className="flex justify-between items-center mb-4 text-[9px] font-black">
                                                                 <span style={{ color: colors.text }} className="uppercase">{task.assignee}</span>
                                                                 <span className={nearDeadline ? "text-red-600 font-bold" : "text-slate-400"}>{task.dueDate}</span>
@@ -538,7 +572,9 @@
                                                             </div>
                                                             <div className="flex gap-2">
                                                                 {status !== 'done' && <button onClick={() => updateTaskProgress(task, status === 'todo' ? 10 : 100)} className="flex-1 py-1.5 bg-slate-900 text-white rounded-lg font-black uppercase text-[8px] tracking-widest disabled:opacity-50" disabled={username === "Guest"}>{status === 'todo' ? t.start : t.finish}</button>}
-                                                                <button onClick={() => username !== "Guest" && taskCol.doc(task.id).update({ status: 'cancelled' })} className={`p-1.5 text-slate-300 transition-all ${username !== "Guest" ? "hover:text-red-500" : "opacity-50 cursor-not-allowed"}`}><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                                                <button onClick={() => username !== "Guest" && taskCol.doc(task.id).update({ status: 'cancelled' })} className={`p-1.5 text-slate-300 transition-all ${username !== "Guest" ? "hover:text-red-500" : "opacity-50 cursor-not-allowed"}`}>
+                                                                    <LucideIcon name="trash-2" className="w-4 h-4" />
+                                                                </button>
                                                             </div>
                                                         </div>
                                                     );
@@ -582,11 +618,11 @@
                                                     ))}
                                                 </div>
                                                 <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                                                    <div className="flex items-center gap-2">{cs.reviewed && <i data-lucide="check-circle" className="w-4 h-4 text-emerald-500"></i>}<span className={`text-[9px] font-black uppercase ${cs.reviewed ? 'text-emerald-600' : 'text-slate-300'}`}>{cs.reviewed ? t.reviewed : t.waiting}</span></div>
+                                                    <div className="flex items-center gap-2">{cs.reviewed && <LucideIcon name="check-circle" className="w-4 h-4 text-emerald-500" />}<span className={`text-[9px] font-black uppercase ${cs.reviewed ? 'text-emerald-600' : 'text-slate-300'}`}>{cs.reviewed ? t.reviewed : t.waiting}</span></div>
                                                     <div className="flex items-center gap-2">
                                                         {checkPermission(cs) && username !== "Guest" && (
                                                             <button onClick={() => deleteCustomer(cs.id)} className="p-1.5 rounded-lg text-slate-300 hover:bg-red-50 hover:text-red-500 transition-all" title={t.delete_client}>
-                                                                <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                                                <LucideIcon name="trash-2" className="w-4 h-4" />
                                                             </button>
                                                         )}
                                                         {username === MANAGER_NAME && <button onClick={() => markAsReviewed(cs)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${cs.reviewed ? 'bg-slate-100 text-slate-400' : 'bg-emerald-600 text-white shadow-md hover:bg-emerald-700'}`}>{cs.reviewed ? t.reset : t.confirm}</button>}
@@ -602,11 +638,36 @@
                                         <table className="w-full text-left border-collapse">
                                             <thead>
                                                 <tr className="bg-slate-900 text-white sticky top-0 z-20">
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">{t.client_info}</th>
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">{t.assignee}</th>
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">{t.workload}</th>
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">{t.communication}</th>
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800">{t.quality}</th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('name')}>
+                                                        <div className="flex items-center gap-2">
+                                                            {t.client_info}
+                                                            {sortConfig.key === 'name' && <LucideIcon name={sortConfig.direction === 'asc' ? 'chevron-up' : 'chevron-down'} className="w-3 h-3" />}
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('tlInCharge')}>
+                                                        <div className="flex items-center gap-2">
+                                                            {t.assignee}
+                                                            {sortConfig.key === 'tlInCharge' && <LucideIcon name={sortConfig.direction === 'asc' ? 'chevron-up' : 'chevron-down'} className="w-3 h-3" />}
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('ratings.workload')}>
+                                                        <div className="flex items-center gap-2">
+                                                            {t.workload}
+                                                            {sortConfig.key === 'ratings.workload' && <LucideIcon name={sortConfig.direction === 'asc' ? 'chevron-up' : 'chevron-down'} className="w-3 h-3" />}
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('ratings.communication')}>
+                                                        <div className="flex items-center gap-2">
+                                                            {t.communication}
+                                                            {sortConfig.key === 'ratings.communication' && <LucideIcon name={sortConfig.direction === 'asc' ? 'chevron-up' : 'chevron-down'} className="w-3 h-3" />}
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('ratings.quality')}>
+                                                        <div className="flex items-center gap-2">
+                                                            {t.quality}
+                                                            {sortConfig.key === 'ratings.quality' && <LucideIcon name={sortConfig.direction === 'asc' ? 'chevron-up' : 'chevron-down'} className="w-3 h-3" />}
+                                                        </div>
+                                                    </th>
                                                     <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 text-right">{t.actions}</th>
                                                 </tr>
                                             </thead>
@@ -652,10 +713,10 @@
                                                             ))}
                                                             <td className="px-6 py-4 text-right">
                                                                 <div className="flex items-center justify-end gap-3">
-                                                                    {cs.reviewed && <i data-lucide="check-circle" className="w-4 h-4 text-emerald-500"></i>}
+                                                                    {cs.reviewed && <LucideIcon name="check-circle" className="w-4 h-4 text-emerald-500" />}
                                                                     {checkPermission(cs) && username !== "Guest" && (
                                                                         <button onClick={() => deleteCustomer(cs.id)} className="text-slate-300 hover:text-red-500 transition-all" title={t.delete_client}>
-                                                                            <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                                                            <LucideIcon name="trash-2" className="w-4 h-4" />
                                                                         </button>
                                                                     )}
                                                                     {username === MANAGER_NAME && (
@@ -752,7 +813,7 @@
                             <div className="bg-white p-8 rounded-[40px] w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
                                 <div className="flex justify-between items-center mb-6">
                                     <h3 className="text-xl font-black uppercase text-slate-800">{activeHub === 'task' ? t.new_task : t.add_client}</h3>
-                                    <button onClick={() => setIsModalOpen(false)} className="text-slate-300 hover:text-slate-900"><i data-lucide="x" className="w-6 h-6"></i></button>
+                                    <button onClick={() => setIsModalOpen(false)} className="text-slate-300 hover:text-slate-900"><LucideIcon name="x" className="w-6 h-6" /></button>
                                 </div>
                                 {activeHub === 'task' ? (
                                     <div className="space-y-4">
