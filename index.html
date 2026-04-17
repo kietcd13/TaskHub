@@ -93,7 +93,7 @@
                         root: containerRef.current
                     });
                 }
-            }); // Re-run để đảm bảo khi icon name thay đổi hoặc re-render icon vẫn hiện
+            });
             return <span ref={containerRef} className="inline-flex items-center justify-center shrink-0"><i data-lucide={name} className={className}></i></span>;
         }
 
@@ -297,7 +297,7 @@
                     tlInCharge: newCsTL,
                     products: selectedProducts.join(", "), 
                     status: newCsStatus,
-                    ratings: { workload: 'stable', communication: 'stable', quality: 'stable' },
+                    ratings: { workload: '', communication: '', quality: '' },
                     comments: { workload: '', communication: '', quality: '' },
                     reviewed: false, createdAt: Date.now(), createdBy: username
                 });
@@ -344,7 +344,7 @@
                 if (cs.reviewed) {
                     await csCol.doc(cs.id).update({
                         reviewed: false,
-                        ratings: { workload: 'stable', communication: 'stable', quality: 'stable' },
+                        ratings: { workload: '', communication: '', quality: '' },
                         comments: { workload: '', communication: '', quality: '' }
                     });
                 } else {
@@ -389,7 +389,7 @@
                     const ref = csCol.doc(cs.id);
                     batch.update(ref, {
                         reviewed: false,
-                        ratings: { workload: 'stable', communication: 'stable', quality: 'stable' },
+                        ratings: { workload: '', communication: '', quality: '' },
                         comments: { workload: '', communication: '', quality: '' }
                     });
                 });
@@ -697,6 +697,7 @@
                                                                             onChange={(e) => updateCsRating(cs.id, field, e.target.value)}
                                                                             className={`text-[9px] font-black uppercase border-none bg-transparent outline-none disabled:opacity-70 ${RATING_LEVELS.find(l => l.id === cs.ratings[field])?.color}`}
                                                                         >
+                                                                            <option value="">-</option>
                                                                             {RATING_LEVELS.map(lv => <option key={lv.id} value={lv.id} className="text-slate-800">{lv.label}</option>)}
                                                                         </select>
                                                                         {(cs.ratings[field] === 'at-risk' || cs.ratings[field] === 'critical') && (
