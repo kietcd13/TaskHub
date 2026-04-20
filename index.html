@@ -84,7 +84,6 @@
 
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // Component để quản lý Icon an toàn hơn, tránh lỗi removeChild của React
         function LucideIcon({ name, className = "" }) {
             const containerRef = useRef(null);
             useEffect(() => {
@@ -113,13 +112,11 @@
             const [selectedWeekId, setSelectedWeekId] = useState('current');
             const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
             
-            // Task Form States
             const [newTitle, setNewTitle] = useState('');
             const [newAssignee, setNewAssignee] = useState(TEAM_MEMBERS[0]);
             const [newDueDate, setNewDueDate] = useState('');
             const [isWeekly, setIsWeekly] = useState(false);
 
-            // CS Form States
             const [newCsName, setNewCsName] = useState('');
             const [newCsRegion, setNewCsRegion] = useState(REGIONS[0]);
             const [newCsTL, setNewCsTL] = useState(TEAM_MEMBERS[0]);
@@ -191,7 +188,7 @@
                 const unsubTasks = taskCol.onSnapshot((snapshot) => {
                     const now = Date.now();
                     const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-                    const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    const all = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })); // Fix 1: Spread data before assigning ID
                     
                     const filtered = all.filter(task => {
                         if (task.status === 'cancelled') return false;
@@ -208,11 +205,11 @@
                 });
 
                 const unsubCs = csCol.onSnapshot((snapshot) => {
-                    setCustomers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    setCustomers(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
                 });
 
                 const unsubHistory = csHistoryCol.orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
-                    setCsHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    setCsHistory(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
                 });
 
                 return () => { unsubTasks(); unsubCs(); unsubHistory(); };
@@ -220,13 +217,10 @@
 
             const filteredCustomers = useMemo(() => {
                 let result = customers.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
-                
                 if (sortConfig.key) {
                     const ratingMap = { 'stable': 0, 'at-risk': 1, 'critical': 2 };
-                    
                     result.sort((a, b) => {
                         let aVal, bVal;
-                        
                         if (sortConfig.key.startsWith('ratings.')) {
                             const field = sortConfig.key.split('.')[1];
                             aVal = ratingMap[a.ratings[field]] ?? -1;
@@ -235,7 +229,6 @@
                             aVal = (a[sortConfig.key] || "").toString().toLowerCase();
                             bVal = (b[sortConfig.key] || "").toString().toLowerCase();
                         }
-
                         if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
                         if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
                         return 0;
@@ -322,7 +315,17 @@
                         const nextDueDate = new Date(task.dueDate);
                         nextDueDate.setDate(nextDueDate.getDate() + 7);
                         const nextShowDate = (new Date()).toISOString(); 
-                        await taskCol.add({ ...task, id: null, status: 'todo', progress: 0, dueDate: nextDueDate.toISOString().split('T')[0], completedAt: null, nextOccurrence: nextShowDate });
+                        
+                        // Fix 2: Clean object to avoid saving null IDs or internal meta
+                        const { id, ...cleanTask } = task; 
+                        await taskCol.add({ 
+                            ...cleanTask, 
+                            status: 'todo', 
+                            progress: 0, 
+                            dueDate: nextDueDate.toISOString().split('T')[0], 
+                            completedAt: null, 
+                            nextOccurrence: nextShowDate 
+                        });
                     }
                 } else if (value > 0) updates.status = 'in_progress';
                 else updates.status = 'todo';
@@ -377,13 +380,11 @@
             const closeWeek = async () => {
                 if (username !== MANAGER_NAME) return;
                 const weekStr = getWeekString();
-                
                 await csHistoryCol.add({
                     weekName: weekStr,
                     createdAt: Date.now(),
                     customersData: customers
                 });
-
                 const batch = db.batch();
                 customers.forEach(cs => {
                     const ref = csCol.doc(cs.id);
@@ -402,11 +403,9 @@
                     { id: 'at-risk', name: 'At-risk', workload: 0, communication: 0, quality: 0, workloadClients: [], communicationClients: [], qualityClients: [] },
                     { id: 'critical', name: 'Critical', workload: 0, communication: 0, quality: 0, workloadClients: [], communicationClients: [], qualityClients: [] }
                 ];
-                
                 const dataToUse = selectedWeekId === 'current' 
                     ? customers 
                     : (csHistory.find(h => h.id === selectedWeekId)?.customersData || []);
-                    
                 dataToUse.forEach(cs => {
                     if (cs.ratings) {
                         const sl = counts.find(c => c.id === cs.ratings.workload);
@@ -417,7 +416,6 @@
                         if (ql) { ql.quality++; ql.qualityClients.push(cs.name); }
                     }
                 });
-                
                 return counts.map(c => ({
                     ...c,
                     total: c.workload + c.communication + c.quality
@@ -482,7 +480,6 @@
                             </button>
                             <h1 className="text-lg font-black uppercase tracking-tighter">{activeHub === 'task' ? t.task_hub_title : activeHub === 'cs' ? t.cs_title : t.overview_hub}</h1>
                         </div>
-                        
                         <div className="flex gap-3 items-center">
                             {activeHub === 'cs' && (
                                 <div className="flex items-center bg-white/10 rounded-xl px-3 py-1.5 border border-white/20 gap-2 focus-within:bg-white/20 transition-all">
@@ -513,11 +510,7 @@
                                 </div>
                             ) : (
                                 <div className="flex bg-white/10 rounded-xl p-1 border border-white/10">
-                                    <select 
-                                        value={selectedWeekId} 
-                                        onChange={(e) => setSelectedWeekId(e.target.value)}
-                                        className="bg-transparent text-white text-[10px] font-bold uppercase outline-none px-2 py-1 cursor-pointer"
-                                    >
+                                    <select value={selectedWeekId} onChange={(e) => setSelectedWeekId(e.target.value)} className="bg-transparent text-white text-[10px] font-bold uppercase outline-none px-2 py-1 cursor-pointer">
                                         <option value="current" className="text-slate-900">{t.current_week}</option>
                                         {csHistory.map(h => <option key={h.id} value={h.id} className="text-slate-900">{formatDisplayWeek(h.weekName)}</option>)}
                                     </select>
@@ -721,10 +714,7 @@
                                                                         </button>
                                                                     )}
                                                                     {username === MANAGER_NAME && (
-                                                                        <button 
-                                                                            onClick={() => markAsReviewed(cs)} 
-                                                                            className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase transition-all ${cs.reviewed ? 'bg-slate-100 text-slate-400' : 'bg-emerald-600 text-white shadow-md'}`}
-                                                                        >
+                                                                        <button onClick={() => markAsReviewed(cs)} className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase transition-all ${cs.reviewed ? 'bg-slate-100 text-slate-400' : 'bg-emerald-600 text-white shadow-md'}`}>
                                                                             {cs.reviewed ? t.reset : t.confirm}
                                                                         </button>
                                                                     )}
@@ -755,7 +745,6 @@
                                     {(() => {
                                         const data = getCombinedOverviewData();
                                         const maxCount = Math.max(...data.map(d => d.total), 5); 
-                                        
                                         return (
                                             <div className="flex-1 w-full min-h-0 relative flex items-end justify-around pb-6 pt-10 border-b-2 border-slate-100">
                                                 {data.map(item => (
@@ -842,7 +831,6 @@
                 </div>
             );
         }
-
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
