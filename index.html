@@ -1,88 +1,26 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import {
-    LayoutDashboard, Users, BarChart2, LogOut, ArrowLeft,
-    Search, RefreshCw, AlertTriangle, Trash2, CheckCircle,
-    ChevronUp, ChevronDown, X as XIcon
-} from 'lucide-react';
-
-// === Firebase Setup ===
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-// Paths
-const taskCol = collection(db, 'artifacts', appId, 'public', 'data', 'team_tasks');
-const csCol = collection(db, 'artifacts', appId, 'public', 'data', 'customers');
-const csHistoryCol = collection(db, 'artifacts', appId, 'public', 'data', 'cs_history');
-
-// === Constants ===
-const TEAM_MEMBERS = ["Kiet Vu", "Trung Pham", "Hung Pham", "Huy Tang"];
-const MANAGER_NAME = "Kiet Vu";
-const REGIONS = ["UK", "SA"];
-const PRODUCTS = ["Roof Truss", "Posi Floor", "I-Joists Floor", "Wall Panels", "Ultra-Span", "Cassettes"];
-
-const ASSIGNEE_COLORS = {
-    "Kiet Vu": { bg: "#E0F2FE", text: "#0369a1", border: "#bae6fd", accent: "#0ea5e9" },
-    "Trung Pham": { bg: "#FEF3C7", text: "#92400e", border: "#fde68a", accent: "#f59e0b" },
-    "Hung Pham": { bg: "#DCFCE7", text: "#166534", border: "#bbf7d0", accent: "#10b981" },
-    "Huy Tang": { bg: "#F3E8FF", text: "#6b21a8", border: "#e9d5ff", accent: "#8b5cf6" },
-    "Default": { bg: "#F8FAFC", text: "#475569", border: "#e2e8f0", accent: "#64748b" }
-};
-
-const RATING_LEVELS = [
-    { id: 'stable', label: 'Stable', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200' },
-    { id: 'at-risk', label: 'At-risk', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
-    { id: 'critical', label: 'Critical', color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' }
-];
-
-const translations = {
-    EN: {
-        todo: "To-do", in_progress: "In Progress", done: "Completed",
-        new: "+ NEW", start: "Start", finish: "Finish",
-        weekly: "Weekly Recurring", deadline: "Approaching deadline!!",
-        verify: "Verify Identity", board: "BOARD", calendar: "SCHEDULE",
-        task_name: "Task name...", create: "Deploy", gold_tag: "Add Gold Tag (Weekly)",
-        cs_title: "CS Hub", back: "Back to Hubs",
-        reviewed: "Reviewed", waiting: "Waiting Review", confirm: "Confirm Review",
-        reset: "Reset Review", grid: "GRID", list: "LIST", search: "Search client...",
-        mgr: "(Mgr)", workspace_choice: "Workspace Choice", logged_in_as: "Logged in as",
-        task_hub_title: "Task Hub Pro", overview_hub: "Overview Hub", sign_out: "Sign Out",
-        current_week: "Current Week", close_week: "Close Week", client_ratings_overview: "Client Ratings Overview",
-        aggregated_from: "Aggregated from CS Hub", status_overview: "Status", loading_charts: "Loading Charts...",
-        client_info: "Client Info", assignee: "Assignee", workload: "Workload", communication: "COM",
-        quality: "Quality", actions: "Actions", trial: "TRIAL", reason: "Reason...", note: "Note...",
-        new_task: "New Task", add_client: "Add Client", client_name: "Client Name", enter_name: "Enter name...",
-        status_label: "Status", region: "Region", products: "Products", tl_in_charge: "TL In Charge",
-        deploy_client: "Deploy Client", progress: "Progress", delete_client: "Delete Client"
-    },
-    VN: {
-        todo: "Cần làm", in_progress: "Đang tiến hành", done: "Hoàn thành",
-        new: "+ MỚI", start: "Bắt đầu", finish: "Xong",
-        weekly: "Lặp lại hàng tuần", deadline: "Sắp đến hạn!!",
-        verify: "Xác minh danh tính", board: "BẢNG", calendar: "LỊCH TRÌNH",
-        task_name: "Tên nhiệm vụ...", create: "Triển khai", gold_tag: "Thêm Gold Tag (Hàng tuần)",
-        cs_title: "CS Hub", back: "Quay lại Hubs",
-        reviewed: "Đã duyệt", waiting: "Chờ duyệt", confirm: "Xác nhận Duyệt",
-        reset: "Làm mới tuần", grid: "LƯỚI", list: "DANH SÁCH", search: "Tìm khách hàng...",
-        mgr: "(Quản lý)", workspace_choice: "Lựa chọn không gian", logged_in_as: "Đăng nhập với tên",
-        task_hub_title: "Task Hub Pro", overview_hub: "Tổng Quan", sign_out: "Đăng xuất",
-        current_week: "Tuần Hiện Tại", close_week: "Chốt Tuần", client_ratings_overview: "Tổng quan đánh giá khách hàng",
-        aggregated_from: "Tổng hợp từ CS Hub", status_overview: "Trạng thái", loading_charts: "Đang tải biểu đồ...",
-        client_info: "Thông tin KH", assignee: "Người phụ trách", workload: "Khối lượng", communication: "Giao tiếp",
-        quality: "Chất lượng", actions: "Thao tác", trial: "DÙNG THỬ", reason: "Lý do...", note: "Ghi chú...",
-        new_task: "Nhiệm vụ mới", add_client: "Thêm khách hàng", client_name: "Tên khách hàng", enter_name: "Nhập tên...",
-        status_label: "Trạng thái", region: "Khu vực", products: "Sản phẩm", tl_in_charge: "Trưởng nhóm",
-        deploy_client: "Triển khai", progress: "Tiến độ", delete_client: "Xóa KH"
-    }
-};
-
-const CustomStyles = () => (
-    <style dangerouslySetInnerHTML={{__html: `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Task Hub Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Cấu hình Babel để dùng React Classic Runtime tránh lỗi import -->
+    <script>
+        Babel.registerPreset('react-classic', {
+            presets: [
+                [Babel.availablePresets.react, { runtime: 'classic' }]
+            ]
+        });
+    </script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
         .bg-todo { background: linear-gradient(to right, #1e3c72, #2a5298); }
         .bg-progress { background: linear-gradient(to right, #ff8c00, #ed1c24); }
         .bg-done { background: linear-gradient(to right, #00b09b, #96c93d); }
@@ -112,718 +50,805 @@ const CustomStyles = () => (
         /* Custom scroll for table */
         .table-container::-webkit-scrollbar { height: 6px; }
         .table-container::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-    `}} />
-);
+    </style>
+</head>
+<body class="bg-gray-100 font-sans text-slate-900">
+    <div id="root"></div>
 
-export default function App() {
-    const [activeHub, setActiveHub] = useState(null); 
-    const [user, setUser] = useState(null);
-    const [lang, setLang] = useState('EN'); 
-    
-    // Removed localStorage usage per strict Canvas policies, using component state for user session
-    const [username, setUsername] = useState('');
-    const [isLoggedIn, setIsLoggedIn] = useState(false);
-    
-    const [tasks, setTasks] = useState([]);
-    const [customers, setCustomers] = useState([]);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [view, setView] = useState('board');
-    const [csView, setCsView] = useState('list');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [csHistory, setCsHistory] = useState([]);
-    const [selectedWeekId, setSelectedWeekId] = useState('current');
-    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
-    
-    const [newTitle, setNewTitle] = useState('');
-    const [newAssignee, setNewAssignee] = useState(TEAM_MEMBERS[0]);
-    const [newDueDate, setNewDueDate] = useState('');
-    const [isWeekly, setIsWeekly] = useState(false);
-
-    const [newCsName, setNewCsName] = useState('');
-    const [newCsRegion, setNewCsRegion] = useState(REGIONS[0]);
-    const [newCsTL, setNewCsTL] = useState(TEAM_MEMBERS[0]);
-    const [selectedProducts, setSelectedProducts] = useState([]);
-    const [newCsStatus, setNewCsStatus] = useState('Invoiced');
-
-    const t = translations[lang];
-
-    useEffect(() => {
-        const initAuth = async () => {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Auth error:", error);
-            }
+    <script type="text/babel" data-presets="react-classic,env">
+        let firebaseConfig = {
+            apiKey: "AIzaSyDyl2FoFZwKtFL6yb2sPEEWzJvBBzNK01A",
+            authDomain: "taskhub-c3f41.firebaseapp.com",
+            projectId: "taskhub-c3f41",
+            storageBucket: "taskhub-c3f41.firebasestorage.app",
+            messagingSenderId: "874827473111",
+            appId: "1:874827473111:web:cdbd7c6b8d5ece0d285092"
         };
-        initAuth();
-        const unsubscribe = onAuthStateChanged(auth, setUser);
-        return () => unsubscribe();
-    }, []);
-
-    const shouldShowTask = (task) => {
-        if (task.status !== 'todo') return true;
-        if (!task.isWeekly || !task.nextOccurrence) return true;
-        const now = new Date();
-        return now >= new Date(task.nextOccurrence);
-    };
-
-    useEffect(() => {
-        if (!user || !isLoggedIn) return;
         
-        const unsubTasks = onSnapshot(taskCol, (snapshot) => {
-            const now = Date.now();
-            const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-            const all = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-            
-            const filtered = all.filter(task => {
-                if (task.status === 'cancelled') return false;
-                if (task.status === 'done' && task.completedAt) {
-                    if ((now - task.completedAt) >= threeDaysMs) return false;
-                }
-                if (!shouldShowTask(task)) return false;
-                if (username === MANAGER_NAME) return true;
-                return task.assignee === username || task.assignee === MANAGER_NAME;
-            });
-            
-            filtered.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
-            setTasks(filtered);
-        }, (err) => console.error(err));
-
-        const unsubCs = onSnapshot(csCol, (snapshot) => {
-            setCustomers(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
-        }, (err) => console.error(err));
-
-        const unsubHistory = onSnapshot(csHistoryCol, (snapshot) => {
-            const docs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-            docs.sort((a, b) => b.createdAt - a.createdAt); // Fetch all, order in memory
-            setCsHistory(docs);
-        }, (err) => console.error(err));
-
-        return () => { unsubTasks(); unsubCs(); unsubHistory(); };
-    }, [user, isLoggedIn, username]);
-
-    const filteredCustomers = useMemo(() => {
-        let result = customers.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
-        if (sortConfig.key) {
-            const ratingMap = { 'stable': 0, 'at-risk': 1, 'critical': 2 };
-            result.sort((a, b) => {
-                let aVal, bVal;
-                if (sortConfig.key.startsWith('ratings.')) {
-                    const field = sortConfig.key.split('.')[1];
-                    aVal = ratingMap[a.ratings[field]] ?? -1;
-                    bVal = ratingMap[b.ratings[field]] ?? -1;
-                } else {
-                    aVal = (a[sortConfig.key] || "").toString().toLowerCase();
-                    bVal = (b[sortConfig.key] || "").toString().toLowerCase();
-                }
-                if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-                if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-                return 0;
-            });
+        // Tương thích để chạy giả lập trực tiếp trên nền tảng
+        if (typeof __firebase_config !== 'undefined') {
+            firebaseConfig = JSON.parse(__firebase_config);
         }
-        return result;
-    }, [customers, searchQuery, sortConfig]);
 
-    const requestSort = (key) => {
-        let direction = 'asc';
-        if (sortConfig.key === key && sortConfig.direction === 'asc') {
-            direction = 'desc';
-        }
-        setSortConfig({ key, direction });
-    };
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        
+        const TEAM_MEMBERS = ["Kiet Vu", "Trung Pham", "Hung Pham", "Huy Tang"];
+        const MANAGER_NAME = "Kiet Vu";
+        const REGIONS = ["UK", "SA"];
+        const PRODUCTS = ["Roof Truss", "Posi Floor", "I-Joists Floor", "Wall Panels", "Ultra-Span", "Cassettes"];
+        
+        const ASSIGNEE_COLORS = {
+            "Kiet Vu": { bg: "#E0F2FE", text: "#0369a1", border: "#bae6fd", accent: "#0ea5e9" },
+            "Trung Pham": { bg: "#FEF3C7", text: "#92400e", border: "#fde68a", accent: "#f59e0b" },
+            "Hung Pham": { bg: "#DCFCE7", text: "#166534", border: "#bbf7d0", accent: "#10b981" },
+            "Huy Tang": { bg: "#F3E8FF", text: "#6b21a8", border: "#e9d5ff", accent: "#8b5cf6" },
+            "Default": { bg: "#F8FAFC", text: "#475569", border: "#e2e8f0", accent: "#64748b" }
+        };
 
-    const checkPermission = (item) => {
-        if (username === MANAGER_NAME) return true;
-        if (username === "Guest") return false;
-        if (item.createdBy === username || item.assignee === username || item.tlInCharge === username) return true;
-        return false;
-    };
-
-    const handleLogin = (name) => {
-        setUsername(name);
-        setIsLoggedIn(true);
-    };
-
-    const handleLogout = () => {
-        setIsLoggedIn(false);
-        setUsername('');
-        setActiveHub(null);
-    };
-
-    const toggleProduct = (prod) => {
-        setSelectedProducts(prev => 
-            prev.includes(prod) ? prev.filter(p => p !== prod) : [...prev, prod]
-        );
-    };
-
-    const createTask = async () => {
-        if (!newTitle || !newDueDate || username === "Guest") return;
-        await addDoc(taskCol, {
-            title: newTitle, assignee: newAssignee, dueDate: newDueDate,
-            isWeekly: isWeekly, status: 'todo', progress: 0,
-            createdAt: Date.now(), createdBy: username,
-            nextOccurrence: null
-        });
-        setNewTitle(''); setIsModalOpen(false);
-    };
-
-    const createCustomer = async () => {
-        if (!newCsName || username === "Guest") return;
-        await addDoc(csCol, {
-            name: newCsName, 
-            region: newCsRegion, 
-            tlInCharge: newCsTL,
-            products: selectedProducts.join(", "), 
-            status: newCsStatus,
-            ratings: { workload: '', communication: '', quality: '' },
-            comments: { workload: '', communication: '', quality: '' },
-            reviewed: false, createdAt: Date.now(), createdBy: username
-        });
-        setNewCsName(''); 
-        setSelectedProducts([]);
-        setNewCsStatus('Invoiced');
-        setIsModalOpen(false);
-    };
-
-    const deleteCustomer = async (id) => {
-        if (username === "Guest") return;
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'customers', id));
-    };
-
-    const updateTaskProgress = async (task, value) => {
-        if (!checkPermission(task) || username === "Guest") return;
-        let updates = { progress: value };
-        if (value === 100) {
-            updates.status = 'done';
-            updates.completedAt = Date.now();
-            if (task.isWeekly) {
-                const nextDueDate = new Date(task.dueDate);
-                nextDueDate.setDate(nextDueDate.getDate() + 7);
-                const nextShowDate = (new Date()).toISOString(); 
-                
-                const { id, ...cleanTask } = task; 
-                await addDoc(taskCol, { 
-                    ...cleanTask, 
-                    status: 'todo', 
-                    progress: 0, 
-                    dueDate: nextDueDate.toISOString().split('T')[0], 
-                    completedAt: null, 
-                    nextOccurrence: nextShowDate 
-                });
-            }
-        } else if (value > 0) updates.status = 'in_progress';
-        else updates.status = 'todo';
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'team_tasks', task.id), updates);
-    };
-
-    const updateCsRating = async (id, field, level) => {
-        if (username === "Guest") return;
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'customers', id), { 
-            [`ratings.${field}`]: level, reviewed: false 
-        });
-    };
-
-    const updateCsComment = async (id, field, text) => {
-        if (username === "Guest") return;
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'customers', id), { 
-            [`comments.${field}`]: text, reviewed: false 
-        });
-    };
-
-    const markAsReviewed = async (cs) => {
-        if (username !== MANAGER_NAME) return;
-        const csRef = doc(db, 'artifacts', appId, 'public', 'data', 'customers', cs.id);
-        if (cs.reviewed) {
-            await updateDoc(csRef, {
-                reviewed: false,
-                ratings: { workload: '', communication: '', quality: '' },
-                comments: { workload: '', communication: '', quality: '' }
-            });
-        } else {
-            await updateDoc(csRef, { reviewed: true });
-        }
-    };
-
-    const isApproachingDeadline = (dueDateStr) => {
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        const dueDate = new Date(dueDateStr);
-        dueDate.setHours(0,0,0,0);
-        return dueDate <= today;
-    };
-
-    const getWeekString = () => {
-        const d = new Date();
-        d.setHours(0,0,0,0);
-        d.setDate(d.getDate() + 4 - (d.getDay()||7));
-        const yearStart = new Date(d.getFullYear(),0,1);
-        const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1)/7);
-        return `Week ${weekNo}, ${d.getFullYear()}`;
-    };
-
-    const formatDisplayWeek = (weekName) => {
-        if (!weekName) return '';
-        return lang === 'VN' ? weekName.replace('Week', 'Tuần') : weekName;
-    };
-
-    const closeWeek = async () => {
-        if (username !== MANAGER_NAME) return;
-        const weekStr = getWeekString();
-        await addDoc(csHistoryCol, {
-            weekName: weekStr,
-            createdAt: Date.now(),
-            customersData: customers
-        });
-        const batch = writeBatch(db);
-        customers.forEach(cs => {
-            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'customers', cs.id);
-            batch.update(ref, {
-                reviewed: false,
-                ratings: { workload: '', communication: '', quality: '' },
-                comments: { workload: '', communication: '', quality: '' }
-            });
-        });
-        await batch.commit();
-    };
-
-    const getCombinedOverviewData = () => {
-        const counts = [
-            { id: 'stable', name: 'Stable', workload: 0, communication: 0, quality: 0, workloadClients: [], communicationClients: [], qualityClients: [] },
-            { id: 'at-risk', name: 'At-risk', workload: 0, communication: 0, quality: 0, workloadClients: [], communicationClients: [], qualityClients: [] },
-            { id: 'critical', name: 'Critical', workload: 0, communication: 0, quality: 0, workloadClients: [], communicationClients: [], qualityClients: [] }
+        const RATING_LEVELS = [
+            { id: 'stable', label: 'Stable', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200' },
+            { id: 'at-risk', label: 'At-risk', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200' },
+            { id: 'critical', label: 'Critical', color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' }
         ];
-        const dataToUse = selectedWeekId === 'current' 
-            ? customers 
-            : (csHistory.find(h => h.id === selectedWeekId)?.customersData || []);
-        dataToUse.forEach(cs => {
-            if (cs.ratings) {
-                const sl = counts.find(c => c.id === cs.ratings.workload);
-                if (sl) { sl.workload++; sl.workloadClients.push(cs.name); }
-                const cl = counts.find(c => c.id === cs.ratings.communication);
-                if (cl) { cl.communication++; cl.communicationClients.push(cs.name); }
-                const ql = counts.find(c => c.id === cs.ratings.quality);
-                if (ql) { ql.quality++; ql.qualityClients.push(cs.name); }
-            }
-        });
-        return counts.map(c => ({
-            ...c,
-            total: c.workload + c.communication + c.quality
-        }));
-    };
 
-    if (!isLoggedIn) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-[#0033a0] p-4 relative font-sans text-slate-900">
-                <CustomStyles />
-                <div className="bg-white p-10 rounded-[40px] shadow-2xl w-full max-w-sm text-center z-10">
-                    <h2 className="text-2xl font-black mb-8 uppercase tracking-tighter text-slate-800">{t.verify}</h2>
-                    <div className="grid gap-3">
-                        {[...TEAM_MEMBERS, "Guest"].map(m => (
-                            <button key={m} onClick={() => handleLogin(m)} className="py-4 bg-slate-50 border-2 border-transparent hover:border-blue-500 rounded-2xl font-bold transition-all text-slate-600 shadow-sm">{m} {m === MANAGER_NAME ? t.mgr : ""}</button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        );
-    }
+        const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'taskhub-pro-v1';
 
-    if (!activeHub) {
-        return (
-            <div className="min-h-screen flex flex-col items-center justify-center bg-[#0033a0] p-6 relative font-sans text-slate-900">
-                <CustomStyles />
-                <div className="text-center mb-12 z-10">
-                    <h2 className="text-4xl font-black uppercase tracking-tighter text-white mb-2">{t.workspace_choice}</h2>
-                    <p className="text-blue-200 font-bold text-xs uppercase tracking-widest">{t.logged_in_as} {username}</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl z-10">
-                    <div onClick={() => setActiveHub('task')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-blue-400 cursor-pointer transition-all shadow-xl flex flex-col items-center hover:-translate-y-2">
-                        <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                            <LayoutDashboard className="text-white w-8 h-8" />
-                        </div>
-                        <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.task_hub_title}</h3>
-                    </div>
-                    <div onClick={() => setActiveHub('cs')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-emerald-400 cursor-pointer transition-all shadow-xl flex flex-col items-center hover:-translate-y-2">
-                        <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                            <Users className="text-white w-8 h-8" />
-                        </div>
-                        <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.cs_title}</h3>
-                    </div>
-                    <div onClick={() => setActiveHub('overview')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-purple-400 cursor-pointer transition-all shadow-xl flex flex-col items-center hover:-translate-y-2">
-                        <div className="w-16 h-16 bg-purple-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                            <BarChart2 className="text-white w-8 h-8" />
-                        </div>
-                        <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.overview_hub}</h3>
-                    </div>
-                </div>
-                <button onClick={handleLogout} className="mt-12 text-blue-200 hover:text-white font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-colors z-10">
-                    <LogOut className="w-4 h-4" /> {t.sign_out}
-                </button>
-            </div>
-        );
-    }
+        const { useState, useEffect, useMemo, useRef } = React;
 
-    return (
-        <div className="min-h-screen flex flex-col h-screen overflow-hidden font-sans text-slate-900 bg-gray-100">
-            <CustomStyles />
-            <header className={`${activeHub === 'task' ? 'bg-header' : activeHub === 'cs' ? 'bg-cs-header' : 'bg-gradient-to-r from-purple-900 to-indigo-900'} text-white px-6 py-4 flex justify-between items-center shadow-xl z-50`}>
-                <div className="flex items-center gap-4">
-                    <button onClick={() => setActiveHub(null)} title={t.back} className="p-2 hover:bg-white/10 rounded-full transition-colors flex items-center justify-center">
-                        <ArrowLeft className="w-5 h-5" />
-                    </button>
-                    <h1 className="text-lg font-black uppercase tracking-tighter">{activeHub === 'task' ? t.task_hub_title : activeHub === 'cs' ? t.cs_title : t.overview_hub}</h1>
-                </div>
-                <div className="flex gap-3 items-center">
-                    {activeHub === 'cs' && (
-                        <div className="flex items-center bg-white/10 rounded-xl px-3 py-1.5 border border-white/20 gap-2 focus-within:bg-white/20 transition-all">
-                            <Search className="w-3.5 h-3.5 text-white/50" />
-                            <input 
-                                type="text" 
-                                className="bg-transparent border-none outline-none text-[11px] font-bold text-white placeholder:text-white/30 w-32 md:w-48" 
-                                placeholder={t.search}
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                            />
-                        </div>
-                    )}
-                    <div className="flex bg-white/10 p-1 rounded-xl border border-white/10">
-                        {['EN', 'VN'].map(l => (
-                            <button key={l} onClick={() => setLang(l)} className={`px-3 py-1 text-[9px] font-black rounded-lg transition-all ${lang === l ? 'bg-white text-slate-900 shadow-md' : 'text-white/50 hover:text-white'}`}>{l}</button>
-                        ))}
-                    </div>
-                    {activeHub === 'task' ? (
-                        <div className="flex bg-white/10 rounded-xl p-1 border border-white/10">
-                            <button onClick={() => setView('board')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${view==='board'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.board}</button>
-                            <button onClick={() => setView('calendar')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${view==='calendar'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.calendar}</button>
-                        </div>
-                    ) : activeHub === 'cs' ? (
-                        <div className="flex bg-white/10 rounded-xl p-1 border border-white/10">
-                            <button onClick={() => setCsView('list')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${csView==='list'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.list}</button>
-                            <button onClick={() => setCsView('grid')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${csView==='grid'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.grid}</button>
-                        </div>
-                    ) : (
-                        <div className="flex bg-white/10 rounded-xl p-1 border border-white/10">
-                            <select value={selectedWeekId} onChange={(e) => setSelectedWeekId(e.target.value)} className="bg-transparent text-white text-[10px] font-bold uppercase outline-none px-2 py-1 cursor-pointer">
-                                <option value="current" className="text-slate-900">{t.current_week}</option>
-                                {csHistory.map(h => <option key={h.id} value={h.id} className="text-slate-900">{formatDisplayWeek(h.weekName)}</option>)}
-                            </select>
-                        </div>
-                    )}
-                    {activeHub === 'cs' && username === MANAGER_NAME && (
-                        <button onClick={closeWeek} className="bg-amber-600 hover:opacity-80 px-4 py-1.5 rounded-lg font-black text-[10px] transition-all uppercase text-white shadow-md">{t.close_week}</button>
-                    )}
-                    {activeHub !== 'overview' && username !== "Guest" && (
-                        <button onClick={() => setIsModalOpen(true)} className={`${activeHub === 'task' ? 'bg-blue-600' : 'bg-emerald-600'} hover:opacity-80 px-4 py-1.5 rounded-lg font-black text-[10px] transition-all uppercase`}>{t.new}</button>
-                    )}
-                    <span className="text-[10px] font-bold bg-white/10 px-3 py-1.5 rounded-lg border border-white/20 uppercase tracking-widest">{username}</span>
-                </div>
-            </header>
+        function LucideIcon({ name, className = "" }) {
+            const containerRef = useRef(null);
+            useEffect(() => {
+                if (window.lucide && containerRef.current) {
+                    window.lucide.createIcons({
+                        root: containerRef.current
+                    });
+                }
+            });
+            return <span ref={containerRef} className="inline-flex items-center justify-center shrink-0"><i data-lucide={name} className={className}></i></span>;
+        }
 
-            <main className="flex-1 p-6 overflow-hidden bg-slate-50">
-                {activeHub === 'task' ? (
-                    view === 'board' ? (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full items-start overflow-hidden">
-                            {['todo', 'in_progress', 'done'].map(status => (
-                                <div key={status} className="flex flex-col gap-3 h-full overflow-hidden">
-                                    <div className={`status-header py-2 rounded-xl text-white font-black uppercase tracking-widest text-[10px] text-center shadow-md ${status==='todo'?'bg-todo':status==='in_progress'?'bg-progress':'bg-done'}`}>
-                                        {t[status]}
-                                    </div>
-                                    <div className="task-list flex flex-col gap-5 pb-10">
-                                        {tasks.filter(tk => tk.status === status).map(task => {
-                                            const colors = ASSIGNEE_COLORS[task.assignee] || ASSIGNEE_COLORS.Default;
-                                            const currentProgress = task.progress || 0;
-                                            const nearDeadline = status !== 'done' && isApproachingDeadline(task.dueDate);
-                                            return (
-                                                <div key={task.id} className="task-card p-4 rounded-2xl shadow-sm border relative" style={{ backgroundColor: colors.bg, borderColor: colors.border }}>
-                                                    <div className="absolute -top-3.5 right-2 flex flex-col items-end gap-1.5 z-40">
-                                                        {task.isWeekly && <div className="bg-amber-400 text-amber-900 text-[8px] font-black px-2.5 py-1.5 rounded-md shadow-lg flex items-center gap-1 animate-tag border border-amber-500/30 uppercase tracking-tighter"><RefreshCw className="w-2.5 h-2.5" />{t.weekly}</div>}
-                                                        {nearDeadline && (
-                                                            <div className="bg-red-600 text-white text-[8px] font-black px-2.5 py-1.5 rounded-md shadow-lg flex items-center gap-1 uppercase tracking-tighter animate-pulse">
-                                                                <AlertTriangle className="w-2.5 h-2.5" /> {t.deadline}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <h4 className="font-bold text-slate-800 text-sm mb-3 mt-1 leading-tight">{task.title}</h4>
-                                                    <div className="flex justify-between items-center mb-4 text-[9px] font-black">
-                                                        <span style={{ color: colors.text }} className="uppercase">{task.assignee}</span>
-                                                        <span className={nearDeadline ? "text-red-600 font-bold" : "text-slate-400"}>{task.dueDate}</span>
-                                                    </div>
-                                                    <div className="mb-4 bg-black/5 p-2 rounded-xl">
-                                                        <div className="flex justify-between items-center mb-1.5"><span className="text-[8px] font-black uppercase text-slate-400">{t.progress}</span><span className="text-[10px] font-black text-blue-700">{currentProgress}%</span></div>
-                                                        <div className="flex gap-0.5">
-                                                            {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(val => (
-                                                                <div key={val} onClick={() => updateTaskProgress(task, val)} className={`flex-1 h-4 rounded-sm cursor-pointer border ${val <= currentProgress ? 'bg-blue-600 border-blue-700' : 'bg-white/60 border-transparent'}`}></div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex gap-2">
-                                                        {status !== 'done' && <button onClick={() => updateTaskProgress(task, status === 'todo' ? 10 : 100)} className="flex-1 py-1.5 bg-slate-900 text-white rounded-lg font-black uppercase text-[8px] tracking-widest disabled:opacity-50" disabled={username === "Guest"}>{status === 'todo' ? t.start : t.finish}</button>}
-                                                        <button onClick={() => username !== "Guest" && updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'team_tasks', task.id), { status: 'cancelled' })} className={`p-1.5 text-slate-300 transition-all ${username !== "Guest" ? "hover:text-red-500" : "opacity-50 cursor-not-allowed"}`}>
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="bg-white rounded-[32px] p-8 shadow-xl border border-slate-100 h-full overflow-y-auto">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {tasks.map(tk => {
-                                    const colors = ASSIGNEE_COLORS[tk.assignee] || ASSIGNEE_COLORS.Default;
-                                    return (
-                                        <div key={tk.id} className="p-4 border rounded-2xl" style={{ backgroundColor: colors.bg, borderColor: colors.border }}>
-                                            <p className="font-bold text-sm text-slate-800 mb-1">{tk.title}</p>
-                                            <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400"><span style={{ color: colors.text }}>{tk.assignee}</span><span>{tk.dueDate}</span></div>
-                                        </div>
-                                    );
-                                })}
+        function App() {
+            const [activeHub, setActiveHub] = useState(null); 
+            const [user, setUser] = useState(null);
+            const [lang, setLang] = useState('EN'); 
+            const [username, setUsername] = useState(() => localStorage.getItem('hub_user') || '');
+            const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem('hub_user'));
+            const [tasks, setTasks] = useState([]);
+            const [customers, setCustomers] = useState([]);
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [view, setView] = useState('board');
+            const [csView, setCsView] = useState('list');
+            const [searchQuery, setSearchQuery] = useState('');
+            const [csHistory, setCsHistory] = useState([]);
+            const [selectedWeekId, setSelectedWeekId] = useState('current');
+            const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+            
+            const [newTitle, setNewTitle] = useState('');
+            const [newAssignee, setNewAssignee] = useState(TEAM_MEMBERS[0]);
+            const [newDueDate, setNewDueDate] = useState('');
+            const [isWeekly, setIsWeekly] = useState(false);
+
+            const [newCsName, setNewCsName] = useState('');
+            const [newCsRegion, setNewCsRegion] = useState(REGIONS[0]);
+            const [newCsTL, setNewCsTL] = useState(TEAM_MEMBERS[0]);
+            const [selectedProducts, setSelectedProducts] = useState([]);
+            const [newCsStatus, setNewCsStatus] = useState('Invoiced');
+
+            const taskCol = db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('team_tasks');
+            const csCol = db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('customers');
+            const csHistoryCol = db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('cs_history');
+
+            const translations = {
+                EN: {
+                    todo: "To-do", in_progress: "In Progress", done: "Completed",
+                    new: "+ NEW", start: "Start", finish: "Finish",
+                    weekly: "Weekly Recurring", deadline: "Approaching deadline!!",
+                    verify: "Verify Identity", board: "BOARD", calendar: "SCHEDULE",
+                    task_name: "Task name...", create: "Deploy", gold_tag: "Add Gold Tag (Weekly)",
+                    cs_title: "CS Hub", back: "Back to Hubs",
+                    reviewed: "Reviewed", waiting: "Waiting Review", confirm: "Confirm Review",
+                    reset: "Reset Review", grid: "GRID", list: "LIST", search: "Search client...",
+                    mgr: "(Mgr)", workspace_choice: "Workspace Choice", logged_in_as: "Logged in as",
+                    task_hub_title: "Task Hub Pro", overview_hub: "Overview Hub", sign_out: "Sign Out",
+                    current_week: "Current Week", close_week: "Close Week", client_ratings_overview: "Client Ratings Overview",
+                    aggregated_from: "Aggregated from CS Hub", status_overview: "Status", loading_charts: "Loading Charts...",
+                    client_info: "Client Info", assignee: "Assignee", workload: "Workload", communication: "COM",
+                    quality: "Quality", actions: "Actions", trial: "TRIAL", reason: "Reason...", note: "Note...",
+                    new_task: "New Task", add_client: "Add Client", client_name: "Client Name", enter_name: "Enter name...",
+                    status_label: "Status", region: "Region", products: "Products", tl_in_charge: "TL In Charge",
+                    deploy_client: "Deploy Client", progress: "Progress", delete_client: "Delete Client"
+                },
+                VN: {
+                    todo: "Cần làm", in_progress: "Đang tiến hành", done: "Hoàn thành",
+                    new: "+ MỚI", start: "Bắt đầu", finish: "Xong",
+                    weekly: "Lặp lại hàng tuần", deadline: "Sắp đến hạn!!",
+                    verify: "Xác minh danh tính", board: "BẢNG", calendar: "LỊCH TRÌNH",
+                    task_name: "Tên nhiệm vụ...", create: "Triển khai", gold_tag: "Thêm Gold Tag (Hàng tuần)",
+                    cs_title: "CS Hub", back: "Quay lại Hubs",
+                    reviewed: "Đã duyệt", waiting: "Chờ duyệt", confirm: "Xác nhận Duyệt",
+                    reset: "Làm mới tuần", grid: "LƯỚI", list: "DANH SÁCH", search: "Tìm khách hàng...",
+                    mgr: "(Quản lý)", workspace_choice: "Lựa chọn không gian", logged_in_as: "Đăng nhập với tên",
+                    task_hub_title: "Task Hub Pro", overview_hub: "Tổng Quan", sign_out: "Đăng xuất",
+                    current_week: "Tuần Hiện Tại", close_week: "Chốt Tuần", client_ratings_overview: "Tổng quan đánh giá khách hàng",
+                    aggregated_from: "Tổng hợp từ CS Hub", status_overview: "Trạng thái", loading_charts: "Đang tải biểu đồ...",
+                    client_info: "Thông vị KH", assignee: "Người phụ trách", workload: "Khối lượng", communication: "Giao tiếp",
+                    quality: "Chất lượng", actions: "Thao tác", trial: "DÙNG THỬ", reason: "Lý do...", note: "Ghi chú...",
+                    new_task: "Nhiệm vụ mới", add_client: "Thêm khách hàng", client_name: "Tên khách hàng", enter_name: "Nhập tên...",
+                    status_label: "Trạng thái", region: "Khu vực", products: "Sản phẩm", tl_in_charge: "Trưởng nhóm",
+                    deploy_client: "Triển khai", progress: "Tiến độ", delete_client: "Xóa KH"
+                }
+            };
+            const t = translations[lang];
+
+            useEffect(() => {
+                if (typeof __initial_auth_token !== 'undefined') {
+                    auth.signInWithCustomToken(__initial_auth_token).catch(() => auth.signInAnonymously());
+                } else {
+                    auth.signInAnonymously();
+                }
+                const unsubscribe = auth.onAuthStateChanged((u) => setUser(u));
+                return () => unsubscribe();
+            }, []);
+
+            const shouldShowTask = (task) => {
+                if (task.status !== 'todo') return true;
+                if (!task.isWeekly || !task.nextOccurrence) return true;
+                const now = new Date();
+                return now >= new Date(task.nextOccurrence);
+            };
+
+            useEffect(() => {
+                if (!user || !isLoggedIn) return;
+                
+                const unsubTasks = taskCol.onSnapshot((snapshot) => {
+                    const now = Date.now();
+                    const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+                    const all = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })); 
+                    
+                    const filtered = all.filter(task => {
+                        if (task.status === 'cancelled') return false;
+                        if (task.status === 'done' && task.completedAt) {
+                            if ((now - task.completedAt) >= threeDaysMs) return false;
+                        }
+                        if (!shouldShowTask(task)) return false;
+                        if (username === MANAGER_NAME) return true;
+                        return task.assignee === username || task.assignee === MANAGER_NAME;
+                    });
+                    
+                    filtered.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+                    setTasks(filtered);
+                });
+
+                const unsubCs = csCol.onSnapshot((snapshot) => {
+                    setCustomers(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
+                });
+
+                const unsubHistory = csHistoryCol.orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
+                    setCsHistory(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
+                });
+
+                return () => { unsubTasks(); unsubCs(); unsubHistory(); };
+            }, [user, isLoggedIn, username]);
+
+            const filteredCustomers = useMemo(() => {
+                let result = customers.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+                if (sortConfig.key) {
+                    const ratingMap = { 'stable': 0, 'at-risk': 1, 'critical': 2 };
+                    result.sort((a, b) => {
+                        let aVal, bVal;
+                        if (sortConfig.key.startsWith('ratings.')) {
+                            const field = sortConfig.key.split('.')[1];
+                            aVal = ratingMap[a.ratings[field]] ?? -1;
+                            bVal = ratingMap[b.ratings[field]] ?? -1;
+                        } else {
+                            aVal = (a[sortConfig.key] || "").toString().toLowerCase();
+                            bVal = (b[sortConfig.key] || "").toString().toLowerCase();
+                        }
+                        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+                return result;
+            }, [customers, searchQuery, sortConfig]);
+
+            const requestSort = (key) => {
+                let direction = 'asc';
+                if (sortConfig.key === key && sortConfig.direction === 'asc') {
+                    direction = 'desc';
+                }
+                setSortConfig({ key, direction });
+            };
+
+            const checkPermission = (item) => {
+                if (username === MANAGER_NAME) return true;
+                if (username === "Guest") return false;
+                if (item.createdBy === username || item.assignee === username || item.tlInCharge === username) return true;
+                return false;
+            };
+
+            const handleLogin = (name) => {
+                localStorage.setItem('hub_user', name);
+                setUsername(name);
+                setIsLoggedIn(true);
+            };
+
+            const handleLogout = () => {
+                localStorage.removeItem('hub_user');
+                setIsLoggedIn(false);
+                setUsername('');
+                setActiveHub(null);
+            };
+
+            const toggleProduct = (prod) => {
+                setSelectedProducts(prev => 
+                    prev.includes(prod) ? prev.filter(p => p !== prod) : [...prev, prod]
+                );
+            };
+
+            const createTask = async () => {
+                if (!newTitle || !newDueDate || username === "Guest") return;
+                await taskCol.add({
+                    title: newTitle, assignee: newAssignee, dueDate: newDueDate,
+                    isWeekly: isWeekly, status: 'todo', progress: 0,
+                    createdAt: Date.now(), createdBy: username,
+                    nextOccurrence: null
+                });
+                setNewTitle(''); setIsModalOpen(false);
+            };
+
+            const createCustomer = async () => {
+                if (!newCsName || username === "Guest") return;
+                await csCol.add({
+                    name: newCsName, 
+                    region: newCsRegion, 
+                    tlInCharge: newCsTL,
+                    products: selectedProducts.join(", "), 
+                    status: newCsStatus,
+                    ratings: { workload: '', communication: '', quality: '' },
+                    comments: { workload: '', communication: '', quality: '' },
+                    reviewed: false, createdAt: Date.now(), createdBy: username
+                });
+                setNewCsName(''); 
+                setSelectedProducts([]);
+                setNewCsStatus('Invoiced');
+                setIsModalOpen(false);
+            };
+
+            const deleteCustomer = async (id) => {
+                if (username === "Guest") return;
+                await csCol.doc(id).delete();
+            };
+
+            const updateTaskProgress = async (task, value) => {
+                if (!checkPermission(task) || username === "Guest") return;
+                let updates = { progress: value };
+                if (value === 100) {
+                    updates.status = 'done';
+                    updates.completedAt = Date.now();
+                    if (task.isWeekly) {
+                        const nextDueDate = new Date(task.dueDate);
+                        nextDueDate.setDate(nextDueDate.getDate() + 7);
+                        const nextShowDate = (new Date()).toISOString(); 
+                        
+                        const { id, ...cleanTask } = task; 
+                        await taskCol.add({ 
+                            ...cleanTask, 
+                            status: 'todo', 
+                            progress: 0, 
+                            dueDate: nextDueDate.toISOString().split('T')[0], 
+                            completedAt: null, 
+                            nextOccurrence: nextShowDate 
+                        });
+                    }
+                } else if (value > 0) updates.status = 'in_progress';
+                else updates.status = 'todo';
+                await taskCol.doc(task.id).update(updates);
+            };
+
+            const updateCsRating = async (id, field, level) => {
+                if (username === "Guest") return;
+                await csCol.doc(id).update({ [`ratings.${field}`]: level, reviewed: false });
+            };
+
+            const updateCsComment = async (id, field, text) => {
+                if (username === "Guest") return;
+                await csCol.doc(id).update({ [`comments.${field}`]: text, reviewed: false });
+            };
+
+            const markAsReviewed = async (cs) => {
+                if (username !== MANAGER_NAME) return;
+                if (cs.reviewed) {
+                    await csCol.doc(cs.id).update({
+                        reviewed: false,
+                        ratings: { workload: '', communication: '', quality: '' },
+                        comments: { workload: '', communication: '', quality: '' }
+                    });
+                } else {
+                    await csCol.doc(cs.id).update({ reviewed: true });
+                }
+            };
+
+            const isApproachingDeadline = (dueDateStr) => {
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                const dueDate = new Date(dueDateStr);
+                dueDate.setHours(0,0,0,0);
+                return dueDate <= today;
+            };
+
+            const getWeekString = () => {
+                const d = new Date();
+                d.setHours(0,0,0,0);
+                d.setDate(d.getDate() + 4 - (d.getDay()||7));
+                const yearStart = new Date(d.getFullYear(),0,1);
+                const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1)/7);
+                return `Week ${weekNo}, ${d.getFullYear()}`;
+            };
+
+            const formatDisplayWeek = (weekName) => {
+                if (!weekName) return '';
+                return lang === 'VN' ? weekName.replace('Week', 'Tuần') : weekName;
+            };
+
+            const closeWeek = async () => {
+                if (username !== MANAGER_NAME) return;
+                const weekStr = getWeekString();
+                await csHistoryCol.add({
+                    weekName: weekStr,
+                    createdAt: Date.now(),
+                    customersData: customers
+                });
+                const batch = db.batch();
+                customers.forEach(cs => {
+                    const ref = csCol.doc(cs.id);
+                    batch.update(ref, {
+                        reviewed: false,
+                        ratings: { workload: '', communication: '', quality: '' },
+                        comments: { workload: '', communication: '', quality: '' }
+                    });
+                });
+                await batch.commit();
+            };
+
+            const getCombinedOverviewData = () => {
+                const counts = [
+                    { id: 'stable', name: 'Stable', workload: 0, communication: 0, quality: 0, workloadClients: [], communicationClients: [], qualityClients: [] },
+                    { id: 'at-risk', name: 'At-risk', workload: 0, communication: 0, quality: 0, workloadClients: [], communicationClients: [], qualityClients: [] },
+                    { id: 'critical', name: 'Critical', workload: 0, communication: 0, quality: 0, workloadClients: [], communicationClients: [], qualityClients: [] }
+                ];
+                const dataToUse = selectedWeekId === 'current' 
+                    ? customers 
+                    : (csHistory.find(h => h.id === selectedWeekId)?.customersData || []);
+                dataToUse.forEach(cs => {
+                    if (cs.ratings) {
+                        const sl = counts.find(c => c.id === cs.ratings.workload);
+                        if (sl) { sl.workload++; sl.workloadClients.push(cs.name); }
+                        const cl = counts.find(c => c.id === cs.ratings.communication);
+                        if (cl) { cl.communication++; cl.communicationClients.push(cs.name); }
+                        const ql = counts.find(c => c.id === cs.ratings.quality);
+                        if (ql) { ql.quality++; ql.qualityClients.push(cs.name); }
+                    }
+                });
+                return counts.map(c => ({
+                    ...c,
+                    total: c.workload + c.communication + c.quality
+                }));
+            };
+
+            if (!isLoggedIn) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-[#0033a0] p-4 relative">
+                        <div className="bg-white p-10 rounded-[40px] shadow-2xl w-full max-w-sm text-center z-10">
+                            <h2 className="text-2xl font-black mb-8 uppercase tracking-tighter text-slate-800">{t.verify}</h2>
+                            <div className="grid gap-3">
+                                {[...TEAM_MEMBERS, "Guest"].map(m => (
+                                    <button key={m} onClick={() => handleLogin(m)} className="py-4 bg-slate-50 border-2 border-transparent hover:border-blue-500 rounded-2xl font-bold transition-all text-slate-600 shadow-sm">{m} {m === MANAGER_NAME ? t.mgr : ""}</button>
+                                ))}
                             </div>
                         </div>
-                    )
-                ) : activeHub === 'cs' ? (
-                    csView === 'grid' ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-10 h-full">
-                            {filteredCustomers.map(cs => {
-                                const colors = ASSIGNEE_COLORS[cs.tlInCharge] || ASSIGNEE_COLORS.Default;
-                                return (
-                                    <div key={cs.id} className={`cs-card bg-white rounded-[32px] p-6 border-2 shadow-sm relative flex flex-col ${cs.reviewed ? 'opacity-60 grayscale-[0.5]' : ''}`} style={{ borderColor: colors.border }}>
-                                        {cs.status === 'Trial' && <div className="absolute top-4 right-4 bg-red-700 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-tighter shadow-md z-10">{t.trial}</div>}
-                                        <div className="mb-4"><h3 className="text-base font-black text-slate-800 uppercase tracking-tighter leading-tight">{cs.name}</h3><p className="text-[9px] font-bold text-slate-400 uppercase">{cs.region} • {cs.products}</p></div>
-                                        <div className="flex items-center gap-2 mb-6 p-2 rounded-xl" style={{ backgroundColor: colors.bg }}><div className="w-1.5 h-4 rounded-full" style={{ backgroundColor: colors.accent }}></div><span className="text-[10px] font-black uppercase" style={{ color: colors.text }}>{cs.tlInCharge}</span></div>
-                                        <div className="space-y-6 flex-1">
-                                            {['workload', 'communication', 'quality'].map(field => (
-                                                <div key={field} className="space-y-2">
-                                                    <div className="flex justify-between items-center"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{t[field]}</span><span className={`text-[9px] font-black uppercase ${RATING_LEVELS.find(l => l.id === cs.ratings[field])?.color}`}>{cs.ratings[field]}</span></div>
-                                                    <div className="grid grid-cols-3 gap-1">{RATING_LEVELS.map(lv => (<button key={lv.id} onClick={() => updateCsRating(cs.id, field, lv.id)} disabled={username === "Guest"} className={`py-1.5 rounded-lg text-[8px] font-black border-2 transition-all ${cs.ratings[field] === lv.id ? `${lv.bg} ${lv.border} ${lv.color}` : 'bg-slate-50 border-slate-50 text-slate-300 hover:border-slate-200 disabled:opacity-50'}`}>{lv.label}</button>))}</div>
-                                                    {(cs.ratings[field] === 'at-risk' || cs.ratings[field] === 'critical') && (<textarea disabled={username === "Guest"} className="w-full p-2 bg-red-50/50 border border-red-100 rounded-xl text-[10px] font-medium text-slate-600 focus:ring-1 focus:ring-red-200 disabled:opacity-50" placeholder={t.reason} rows="2" value={cs.comments?.[field] || ''} onChange={(e) => updateCsComment(cs.id, field, e.target.value)} />)}
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                                            <div className="flex items-center gap-2">{cs.reviewed && <CheckCircle className="w-4 h-4 text-emerald-500" />}<span className={`text-[9px] font-black uppercase ${cs.reviewed ? 'text-emerald-600' : 'text-slate-300'}`}>{cs.reviewed ? t.reviewed : t.waiting}</span></div>
-                                            <div className="flex items-center gap-2">
-                                                {checkPermission(cs) && username !== "Guest" && (
-                                                    <button onClick={() => deleteCustomer(cs.id)} className="p-1.5 rounded-lg text-slate-300 hover:bg-red-50 hover:text-red-500 transition-all" title={t.delete_client}>
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                )}
-                                                {username === MANAGER_NAME && <button onClick={() => markAsReviewed(cs)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${cs.reviewed ? 'bg-slate-100 text-slate-400' : 'bg-emerald-600 text-white shadow-md hover:bg-emerald-700'}`}>{cs.reviewed ? t.reset : t.confirm}</button>}
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                    </div>
+                );
+            }
+
+            if (!activeHub) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center bg-[#0033a0] p-6 relative">
+                        <div className="text-center mb-12 z-10">
+                            <h2 className="text-4xl font-black uppercase tracking-tighter text-white mb-2">{t.workspace_choice}</h2>
+                            <p className="text-blue-200 font-bold text-xs uppercase tracking-widest">{t.logged_in_as} {username}</p>
                         </div>
-                    ) : (
-                        <div className="bg-white rounded-[32px] shadow-xl border border-slate-100 h-full flex flex-col overflow-hidden">
-                            <div className="overflow-auto table-container flex-1">
-                                <table className="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr className="bg-slate-900 text-white sticky top-0 z-20">
-                                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('name')}>
-                                                <div className="flex items-center gap-2">
-                                                    {t.client_info}
-                                                    {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                                                </div>
-                                            </th>
-                                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('tlInCharge')}>
-                                                <div className="flex items-center gap-2">
-                                                    {t.assignee}
-                                                    {sortConfig.key === 'tlInCharge' && (sortConfig.direction === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                                                </div>
-                                            </th>
-                                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('ratings.workload')}>
-                                                <div className="flex items-center gap-2">
-                                                    {t.workload}
-                                                    {sortConfig.key === 'ratings.workload' && (sortConfig.direction === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                                                </div>
-                                            </th>
-                                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('ratings.communication')}>
-                                                <div className="flex items-center gap-2">
-                                                    {t.communication}
-                                                    {sortConfig.key === 'ratings.communication' && (sortConfig.direction === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                                                </div>
-                                            </th>
-                                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('ratings.quality')}>
-                                                <div className="flex items-center gap-2">
-                                                    {t.quality}
-                                                    {sortConfig.key === 'ratings.quality' && (sortConfig.direction === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                                                </div>
-                                            </th>
-                                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 text-right">{t.actions}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {filteredCustomers.map(cs => {
-                                            const colors = ASSIGNEE_COLORS[cs.tlInCharge] || ASSIGNEE_COLORS.Default;
-                                            return (
-                                                <tr key={cs.id} className={`hover:bg-slate-50 transition-colors ${cs.reviewed ? 'opacity-60 bg-slate-50/50' : ''}`}>
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex flex-col">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-sm font-black text-slate-800 uppercase leading-none">{cs.name}</span>
-                                                                {cs.status === 'Trial' && <span className="bg-red-700 text-white text-[7px] font-black px-1.5 py-0.5 rounded leading-none">{t.trial}</span>}
-                                                            </div>
-                                                            <span className="text-[9px] font-bold text-slate-400 uppercase mt-1">{cs.region} • {cs.products}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <span className="px-3 py-1 rounded-lg text-[9px] font-black uppercase" style={{ backgroundColor: colors.bg, color: colors.text }}>{cs.tlInCharge}</span>
-                                                    </td>
-                                                    {['workload', 'communication', 'quality'].map(field => (
-                                                        <td key={field} className="px-6 py-4">
-                                                            <div className="flex flex-col gap-1.5">
-                                                                <select 
-                                                                    value={cs.ratings[field]} 
-                                                                    disabled={username === "Guest"}
-                                                                    onChange={(e) => updateCsRating(cs.id, field, e.target.value)}
-                                                                    className={`text-[9px] font-black uppercase border-none bg-transparent outline-none disabled:opacity-70 ${RATING_LEVELS.find(l => l.id === cs.ratings[field])?.color}`}
-                                                                >
-                                                                    <option value="">-</option>
-                                                                    {RATING_LEVELS.map(lv => <option key={lv.id} value={lv.id} className="text-slate-800">{lv.label}</option>)}
-                                                                </select>
-                                                                {(cs.ratings[field] === 'at-risk' || cs.ratings[field] === 'critical') && (
-                                                                    <input 
-                                                                        disabled={username === "Guest"}
-                                                                        className="p-1.5 bg-red-50/50 border-b border-red-100 text-[8px] font-medium text-slate-600 focus:outline-none min-w-[120px] disabled:opacity-70" 
-                                                                        placeholder={t.note}
-                                                                        value={cs.comments?.[field] || ''} 
-                                                                        onChange={(e) => updateCsComment(cs.id, field, e.target.value)}
-                                                                    />
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl z-10">
+                            <div onClick={() => setActiveHub('task')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-blue-400 cursor-pointer transition-all shadow-xl flex flex-col items-center hover:-translate-y-2">
+                                <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
+                                    <LucideIcon name="layout-dashboard" className="text-white w-8 h-8" />
+                                </div>
+                                <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.task_hub_title}</h3>
+                            </div>
+                            <div onClick={() => setActiveHub('cs')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-emerald-400 cursor-pointer transition-all shadow-xl flex flex-col items-center hover:-translate-y-2">
+                                <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
+                                    <LucideIcon name="users" className="text-white w-8 h-8" />
+                                </div>
+                                <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.cs_title}</h3>
+                            </div>
+                            <div onClick={() => setActiveHub('overview')} className="group bg-white p-10 rounded-[48px] border-4 border-transparent hover:border-purple-400 cursor-pointer transition-all shadow-xl flex flex-col items-center hover:-translate-y-2">
+                                <div className="w-16 h-16 bg-purple-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
+                                    <LucideIcon name="bar-chart-2" className="text-white w-8 h-8" />
+                                </div>
+                                <h3 className="text-xl font-black uppercase text-slate-800 text-center">{t.overview_hub}</h3>
+                            </div>
+                        </div>
+                        <button onClick={handleLogout} className="mt-12 text-blue-200 hover:text-white font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-colors z-10">
+                            <LucideIcon name="log-out" className="w-4 h-4" /> {t.sign_out}
+                        </button>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen flex flex-col h-screen overflow-hidden">
+                    <header className={`${activeHub === 'task' ? 'bg-header' : activeHub === 'cs' ? 'bg-cs-header' : 'bg-gradient-to-r from-purple-900 to-indigo-900'} text-white px-6 py-4 flex justify-between items-center shadow-xl z-50`}>
+                        <div className="flex items-center gap-4">
+                            <button onClick={() => setActiveHub(null)} title={t.back} className="p-2 hover:bg-white/10 rounded-full transition-colors flex items-center justify-center">
+                                <LucideIcon name="arrow-left" className="w-5 h-5" />
+                            </button>
+                            <h1 className="text-lg font-black uppercase tracking-tighter">{activeHub === 'task' ? t.task_hub_title : activeHub === 'cs' ? t.cs_title : t.overview_hub}</h1>
+                        </div>
+                        <div className="flex gap-3 items-center">
+                            {activeHub === 'cs' && (
+                                <div className="flex items-center bg-white/10 rounded-xl px-3 py-1.5 border border-white/20 gap-2 focus-within:bg-white/20 transition-all">
+                                    <LucideIcon name="search" className="w-3.5 h-3.5 text-white/50" />
+                                    <input 
+                                        type="text" 
+                                        className="bg-transparent border-none outline-none text-[11px] font-bold text-white placeholder:text-white/30 w-32 md:w-48" 
+                                        placeholder={t.search}
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                    />
+                                </div>
+                            )}
+                            <div className="flex bg-white/10 p-1 rounded-xl border border-white/10">
+                                {['EN', 'VN'].map(l => (
+                                    <button key={l} onClick={() => setLang(l)} className={`px-3 py-1 text-[9px] font-black rounded-lg transition-all ${lang === l ? 'bg-white text-slate-900 shadow-md' : 'text-white/50 hover:text-white'}`}>{l}</button>
+                                ))}
+                            </div>
+                            {activeHub === 'task' ? (
+                                <div className="flex bg-white/10 rounded-xl p-1 border border-white/10">
+                                    <button onClick={() => setView('board')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${view==='board'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.board}</button>
+                                    <button onClick={() => setView('calendar')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${view==='calendar'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.calendar}</button>
+                                </div>
+                            ) : activeHub === 'cs' ? (
+                                <div className="flex bg-white/10 rounded-xl p-1 border border-white/10">
+                                    <button onClick={() => setCsView('list')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${csView==='list'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.list}</button>
+                                    <button onClick={() => setCsView('grid')} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold ${csView==='grid'?'bg-white text-slate-900 shadow':'text-white'}`}>{t.grid}</button>
+                                </div>
+                            ) : (
+                                <div className="flex bg-white/10 rounded-xl p-1 border border-white/10">
+                                    <select value={selectedWeekId} onChange={(e) => setSelectedWeekId(e.target.value)} className="bg-transparent text-white text-[10px] font-bold uppercase outline-none px-2 py-1 cursor-pointer">
+                                        <option value="current" className="text-slate-900">{t.current_week}</option>
+                                        {csHistory.map(h => <option key={h.id} value={h.id} className="text-slate-900">{formatDisplayWeek(h.weekName)}</option>)}
+                                    </select>
+                                </div>
+                            )}
+                            {activeHub === 'cs' && username === MANAGER_NAME && (
+                                <button onClick={closeWeek} className="bg-amber-600 hover:opacity-80 px-4 py-1.5 rounded-lg font-black text-[10px] transition-all uppercase text-white shadow-md">{t.close_week}</button>
+                            )}
+                            {activeHub !== 'overview' && username !== "Guest" && (
+                                <button onClick={() => setIsModalOpen(true)} className={`${activeHub === 'task' ? 'bg-blue-600' : 'bg-emerald-600'} hover:opacity-80 px-4 py-1.5 rounded-lg font-black text-[10px] transition-all uppercase`}>{t.new}</button>
+                            )}
+                            <span className="text-[10px] font-bold bg-white/10 px-3 py-1.5 rounded-lg border border-white/20 uppercase tracking-widest">{username}</span>
+                        </div>
+                    </header>
+
+                    <main className="flex-1 p-6 overflow-hidden bg-slate-50">
+                        {activeHub === 'task' ? (
+                            view === 'board' ? (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full items-start overflow-hidden">
+                                    {['todo', 'in_progress', 'done'].map(status => (
+                                        <div key={status} className="flex flex-col gap-3 h-full overflow-hidden">
+                                            <div className={`status-header py-2 rounded-xl text-white font-black uppercase tracking-widest text-[10px] text-center shadow-md ${status==='todo'?'bg-todo':status==='in_progress'?'bg-progress':'bg-done'}`}>
+                                                {t[status]}
+                                            </div>
+                                            <div className="task-list flex flex-col gap-5 pb-10">
+                                                {tasks.filter(tk => tk.status === status).map(task => {
+                                                    const colors = ASSIGNEE_COLORS[task.assignee] || ASSIGNEE_COLORS.Default;
+                                                    const currentProgress = task.progress || 0;
+                                                    const nearDeadline = status !== 'done' && isApproachingDeadline(task.dueDate);
+                                                    return (
+                                                        <div key={task.id} className="task-card p-4 rounded-2xl shadow-sm border relative" style={{ backgroundColor: colors.bg, borderColor: colors.border }}>
+                                                            <div className="absolute -top-3.5 right-2 flex flex-col items-end gap-1.5 z-40">
+                                                                {task.isWeekly && <div className="bg-amber-400 text-amber-900 text-[8px] font-black px-2.5 py-1.5 rounded-md shadow-lg flex items-center gap-1 animate-tag border border-amber-500/30 uppercase tracking-tighter"><LucideIcon name="refresh-cw" className="w-2.5 h-2.5" />{t.weekly}</div>}
+                                                                {nearDeadline && (
+                                                                    <div className="bg-red-600 text-white text-[8px] font-black px-2.5 py-1.5 rounded-md shadow-lg flex items-center gap-1 uppercase tracking-tighter animate-pulse">
+                                                                        <LucideIcon name="alert-triangle" className="w-2.5 h-2.5" /> {t.deadline}
+                                                                    </div>
                                                                 )}
                                                             </div>
-                                                        </td>
-                                                    ))}
-                                                    <td className="px-6 py-4 text-right">
-                                                        <div className="flex items-center justify-end gap-3">
-                                                            {cs.reviewed && <CheckCircle className="w-4 h-4 text-emerald-500" />}
-                                                            {checkPermission(cs) && username !== "Guest" && (
-                                                                <button onClick={() => deleteCustomer(cs.id)} className="text-slate-300 hover:text-red-500 transition-all" title={t.delete_client}>
-                                                                    <Trash2 className="w-4 h-4" />
+                                                            <h4 className="font-bold text-slate-800 text-sm mb-3 mt-1 leading-tight">{task.title}</h4>
+                                                            <div className="flex justify-between items-center mb-4 text-[9px] font-black">
+                                                                <span style={{ color: colors.text }} className="uppercase">{task.assignee}</span>
+                                                                <span className={nearDeadline ? "text-red-600 font-bold" : "text-slate-400"}>{task.dueDate}</span>
+                                                            </div>
+                                                            <div className="mb-4 bg-black/5 p-2 rounded-xl">
+                                                                <div className="flex justify-between items-center mb-1.5"><span className="text-[8px] font-black uppercase text-slate-400">{t.progress}</span><span className="text-[10px] font-black text-blue-700">{currentProgress}%</span></div>
+                                                                <div className="flex gap-0.5">
+                                                                    {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(val => (
+                                                                        <div key={val} onClick={() => updateTaskProgress(task, val)} className={`flex-1 h-4 rounded-sm cursor-pointer border ${val <= currentProgress ? 'bg-blue-600 border-blue-700' : 'bg-white/60 border-transparent'}`}></div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                {status !== 'done' && <button onClick={() => updateTaskProgress(task, status === 'todo' ? 10 : 100)} className="flex-1 py-1.5 bg-slate-900 text-white rounded-lg font-black uppercase text-[8px] tracking-widest disabled:opacity-50" disabled={username === "Guest"}>{status === 'todo' ? t.start : t.finish}</button>}
+                                                                <button onClick={() => username !== "Guest" && taskCol.doc(task.id).update({ status: 'cancelled' })} className={`p-1.5 text-slate-300 transition-all ${username !== "Guest" ? "hover:text-red-500" : "opacity-50 cursor-not-allowed"}`}>
+                                                                    <LucideIcon name="trash-2" className="w-4 h-4" />
                                                                 </button>
-                                                            )}
-                                                            {username === MANAGER_NAME && (
-                                                                <button onClick={() => markAsReviewed(cs)} className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase transition-all ${cs.reviewed ? 'bg-slate-100 text-slate-400' : 'bg-emerald-600 text-white shadow-md'}`}>
-                                                                    {cs.reviewed ? t.reset : t.confirm}
-                                                                </button>
-                                                            )}
+                                                            </div>
                                                         </div>
-                                                    </td>
-                                                </tr>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="bg-white rounded-[32px] p-8 shadow-xl border border-slate-100 h-full overflow-y-auto">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {tasks.map(tk => {
+                                            const colors = ASSIGNEE_COLORS[tk.assignee] || ASSIGNEE_COLORS.Default;
+                                            return (
+                                                <div key={tk.id} className="p-4 border rounded-2xl" style={{ backgroundColor: colors.bg, borderColor: colors.border }}>
+                                                    <p className="font-bold text-sm text-slate-800 mb-1">{tk.title}</p>
+                                                    <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400"><span style={{ color: colors.text }}>{tk.assignee}</span><span>{tk.dueDate}</span></div>
+                                                </div>
                                             );
                                         })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    )
-                ) : activeHub === 'overview' ? (
-                    <div className="h-full overflow-y-auto pb-10">
-                        <div className="mb-6 flex justify-between items-end">
-                            <div>
-                                <h2 className="text-2xl font-black uppercase text-slate-800 tracking-tighter">{t.client_ratings_overview}</h2>
-                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{t.aggregated_from} ({selectedWeekId === 'current' ? t.current_week : formatDisplayWeek(csHistory.find(h => h.id === selectedWeekId)?.weekName)})</p>
-                            </div>
-                            <div className="flex flex-wrap gap-4">
-                                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-blue-500"></div><span className="text-[10px] font-black uppercase text-slate-600">{t.workload}</span></div>
-                                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-purple-500"></div><span className="text-[10px] font-black uppercase text-slate-600">{t.communication}</span></div>
-                                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-pink-500"></div><span className="text-[10px] font-black uppercase text-slate-600">{t.quality}</span></div>
-                            </div>
-                        </div>
-                        <div className="bg-white p-8 rounded-[32px] shadow-sm border border-slate-100 flex flex-col h-[calc(100vh-220px)] min-h-[500px]">
-                            {(() => {
-                                const data = getCombinedOverviewData();
-                                const maxCount = Math.max(...data.map(d => d.total), 5); 
-                                return (
-                                    <div className="flex-1 w-full min-h-0 relative flex items-end justify-around pb-6 pt-10 border-b-2 border-slate-100">
-                                        {data.map(item => (
-                                            <div key={item.name} className="flex flex-col items-center w-1/3 md:w-1/4 h-full justify-end relative group hover:z-50">
-                                                <span className="absolute -top-8 text-lg font-black text-slate-700">{item.total > 0 ? item.total : ''}</span>
-                                                <div 
-                                                    className="w-full flex flex-col justify-end drop-shadow-2xl rounded-t-[20px] rounded-b-md overflow-visible"
-                                                    style={{ 
-                                                        height: `${(item.total / maxCount) * 100}%`, 
-                                                        minHeight: item.total > 0 ? '24px' : '4px',
-                                                        backgroundColor: item.total === 0 ? '#f1f5f9' : 'transparent',
-                                                        boxShadow: item.total > 0 ? '0 15px 30px -5px rgba(0,0,0,0.3)' : 'none'
-                                                    }}
-                                                >
-                                                    {item.quality > 0 && (
-                                                        <div style={{ height: `${(item.quality / item.total) * 100}%` }} className="first:rounded-t-[20px] bg-gradient-to-r from-pink-600 via-pink-400 to-pink-700 shadow-[inset_-8px_0_10px_rgba(0,0,0,0.25),inset_8px_0_10px_rgba(255,255,255,0.3)] border-t border-white/30 w-full relative group/tt hover:opacity-95 cursor-pointer transition-all flex items-center justify-center text-[12px] text-white font-black">
-                                                            {item.quality}
-                                                            <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50 shadow-xl border border-slate-700">
-                                                                <strong className="text-pink-300 block mb-1 border-b border-slate-600 pb-1">{t.quality}</strong>
-                                                                <span className="font-normal">{item.qualityClients.join(', ')}</span>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {item.communication > 0 && (
-                                                        <div style={{ height: `${(item.communication / item.total) * 100}%` }} className="first:rounded-t-[20px] bg-gradient-to-r from-purple-600 via-purple-400 to-purple-700 shadow-[inset_-8px_0_10px_rgba(0,0,0,0.25),inset_8px_0_10px_rgba(255,255,255,0.3)] border-t border-white/30 w-full relative group/tt hover:opacity-95 cursor-pointer transition-all flex items-center justify-center text-[12px] text-white font-black">
-                                                            {item.communication}
-                                                            <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50 shadow-xl border border-slate-700">
-                                                                <strong className="text-purple-300 block mb-1 border-b border-slate-600 pb-1">{t.communication}</strong>
-                                                                <span className="font-normal">{item.communicationClients.join(', ')}</span>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {item.workload > 0 && (
-                                                        <div style={{ height: `${(item.workload / item.total) * 100}%` }} className="first:rounded-t-[20px] bg-gradient-to-r from-blue-600 via-blue-400 to-blue-700 shadow-[inset_-8px_0_10px_rgba(0,0,0,0.25),inset_8px_0_10px_rgba(255,255,255,0.3)] border-t border-white/30 w-full relative group/tt hover:opacity-95 cursor-pointer transition-all flex items-center justify-center text-[12px] text-white font-black rounded-b-md">
-                                                            {item.workload}
-                                                            <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50 shadow-xl border border-slate-700">
-                                                                <strong className="text-blue-300 block mb-1 border-b border-slate-600 pb-1">{t.workload}</strong>
-                                                                <span className="font-normal">{item.workloadClients.join(', ')}</span>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <span className="absolute -bottom-8 text-sm font-black text-slate-500 uppercase tracking-tighter whitespace-nowrap">{item.name}</span>
-                                            </div>
-                                        ))}
                                     </div>
-                                );
-                            })()}
-                        </div>
-                    </div>
-                ) : null}
-            </main>
-
-            {isModalOpen && username !== "Guest" && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white p-8 rounded-[40px] w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-black uppercase text-slate-800">{activeHub === 'task' ? t.new_task : t.add_client}</h3>
-                            <button onClick={() => setIsModalOpen(false)} className="text-slate-300 hover:text-slate-900"><XIcon className="w-6 h-6" /></button>
-                        </div>
-                        {activeHub === 'task' ? (
-                            <div className="space-y-4">
-                                <input className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold text-sm outline-none" placeholder={t.task_name} value={newTitle} onChange={e => setNewTitle(e.target.value)} />
-                                <div className="grid grid-cols-1 gap-3">
-                                    <select className="w-full px-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-xs" value={newAssignee} onChange={e => setNewAssignee(e.target.value)}>{TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}</select>
-                                    <input type="date" className="w-full px-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-xs outline-none" value={newDueDate} onChange={e => setNewDueDate(e.target.value)} />
                                 </div>
-                                <div className="flex items-center gap-2 p-3 bg-amber-50 rounded-xl border border-amber-100"><input type="checkbox" id="weekly" checked={isWeekly} onChange={e => setIsWeekly(e.target.checked)} /><label htmlFor="weekly" className="text-[10px] font-black text-amber-700 uppercase cursor-pointer select-none">{t.gold_tag}</label></div>
-                                <button onClick={createTask} className="w-full py-5 bg-slate-900 text-white rounded-[24px] font-black uppercase text-sm tracking-widest hover:bg-blue-600 transition-all">{t.create}</button>
+                            )
+                        ) : activeHub === 'cs' ? (
+                            csView === 'grid' ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-10 h-full">
+                                    {filteredCustomers.map(cs => {
+                                        const colors = ASSIGNEE_COLORS[cs.tlInCharge] || ASSIGNEE_COLORS.Default;
+                                        return (
+                                            <div key={cs.id} className={`cs-card bg-white rounded-[32px] p-6 border-2 shadow-sm relative flex flex-col ${cs.reviewed ? 'opacity-60 grayscale-[0.5]' : ''}`} style={{ borderColor: colors.border }}>
+                                                {cs.status === 'Trial' && <div className="absolute top-4 right-4 bg-red-700 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-tighter shadow-md z-10">{t.trial}</div>}
+                                                <div className="mb-4"><h3 className="text-base font-black text-slate-800 uppercase tracking-tighter leading-tight">{cs.name}</h3><p className="text-[9px] font-bold text-slate-400 uppercase">{cs.region} • {cs.products}</p></div>
+                                                <div className="flex items-center gap-2 mb-6 p-2 rounded-xl" style={{ backgroundColor: colors.bg }}><div className="w-1.5 h-4 rounded-full" style={{ backgroundColor: colors.accent }}></div><span className="text-[10px] font-black uppercase" style={{ color: colors.text }}>{cs.tlInCharge}</span></div>
+                                                <div className="space-y-6 flex-1">
+                                                    {['workload', 'communication', 'quality'].map(field => (
+                                                        <div key={field} className="space-y-2">
+                                                            <div className="flex justify-between items-center"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{t[field]}</span><span className={`text-[9px] font-black uppercase ${RATING_LEVELS.find(l => l.id === cs.ratings[field])?.color}`}>{cs.ratings[field]}</span></div>
+                                                            <div className="grid grid-cols-3 gap-1">{RATING_LEVELS.map(lv => (<button key={lv.id} onClick={() => updateCsRating(cs.id, field, lv.id)} disabled={username === "Guest"} className={`py-1.5 rounded-lg text-[8px] font-black border-2 transition-all ${cs.ratings[field] === lv.id ? `${lv.bg} ${lv.border} ${lv.color}` : 'bg-slate-50 border-slate-50 text-slate-300 hover:border-slate-200 disabled:opacity-50'}`}>{lv.label}</button>))}</div>
+                                                            {(cs.ratings[field] === 'at-risk' || cs.ratings[field] === 'critical') && (<textarea disabled={username === "Guest"} className="w-full p-2 bg-red-50/50 border border-red-100 rounded-xl text-[10px] font-medium text-slate-600 focus:ring-1 focus:ring-red-200 disabled:opacity-50" placeholder={t.reason} rows="2" value={cs.comments?.[field] || ''} onChange={(e) => updateCsComment(cs.id, field, e.target.value)} />)}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">{cs.reviewed && <LucideIcon name="check-circle" className="w-4 h-4 text-emerald-500" />}<span className={`text-[9px] font-black uppercase ${cs.reviewed ? 'text-emerald-600' : 'text-slate-300'}`}>{cs.reviewed ? t.reviewed : t.waiting}</span></div>
+                                                    <div className="flex items-center gap-2">
+                                                        {checkPermission(cs) && username !== "Guest" && (
+                                                            <button onClick={() => deleteCustomer(cs.id)} className="p-1.5 rounded-lg text-slate-300 hover:bg-red-50 hover:text-red-500 transition-all" title={t.delete_client}>
+                                                                <LucideIcon name="trash-2" className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                        {username === MANAGER_NAME && <button onClick={() => markAsReviewed(cs)} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${cs.reviewed ? 'bg-slate-100 text-slate-400' : 'bg-emerald-600 text-white shadow-md hover:bg-emerald-700'}`}>{cs.reviewed ? t.reset : t.confirm}</button>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="bg-white rounded-[32px] shadow-xl border border-slate-100 h-full flex flex-col overflow-hidden">
+                                    <div className="overflow-auto table-container flex-1">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-900 text-white sticky top-0 z-20">
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('name')}>
+                                                        <div className="flex items-center gap-2">
+                                                            {t.client_info}
+                                                            {sortConfig.key === 'name' && <LucideIcon name={sortConfig.direction === 'asc' ? 'chevron-up' : 'chevron-down'} className="w-3 h-3" />}
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('tlInCharge')}>
+                                                        <div className="flex items-center gap-2">
+                                                            {t.assignee}
+                                                            {sortConfig.key === 'tlInCharge' && <LucideIcon name={sortConfig.direction === 'asc' ? 'chevron-up' : 'chevron-down'} className="w-3 h-3" />}
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('ratings.workload')}>
+                                                        <div className="flex items-center gap-2">
+                                                            {t.workload}
+                                                            {sortConfig.key === 'ratings.workload' && <LucideIcon name={sortConfig.direction === 'asc' ? 'chevron-up' : 'chevron-down'} className="w-3 h-3" />}
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('ratings.communication')}>
+                                                        <div className="flex items-center gap-2">
+                                                            {t.communication}
+                                                            {sortConfig.key === 'ratings.communication' && <LucideIcon name={sortConfig.direction === 'asc' ? 'chevron-up' : 'chevron-down'} className="w-3 h-3" />}
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => requestSort('ratings.quality')}>
+                                                        <div className="flex items-center gap-2">
+                                                            {t.quality}
+                                                            {sortConfig.key === 'ratings.quality' && <LucideIcon name={sortConfig.direction === 'asc' ? 'chevron-up' : 'chevron-down'} className="w-3 h-3" />}
+                                                        </div>
+                                                    </th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b border-slate-800 text-right">{t.actions}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {filteredCustomers.map(cs => {
+                                                    const colors = ASSIGNEE_COLORS[cs.tlInCharge] || ASSIGNEE_COLORS.Default;
+                                                    return (
+                                                        <tr key={cs.id} className={`hover:bg-slate-50 transition-colors ${cs.reviewed ? 'opacity-60 bg-slate-50/50' : ''}`}>
+                                                            <td className="px-6 py-4">
+                                                                <div className="flex flex-col">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-sm font-black text-slate-800 uppercase leading-none">{cs.name}</span>
+                                                                        {cs.status === 'Trial' && <span className="bg-red-700 text-white text-[7px] font-black px-1.5 py-0.5 rounded leading-none">{t.trial}</span>}
+                                                                    </div>
+                                                                    <span className="text-[9px] font-bold text-slate-400 uppercase mt-1">{cs.region} • {cs.products}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <span className="px-3 py-1 rounded-lg text-[9px] font-black uppercase" style={{ backgroundColor: colors.bg, color: colors.text }}>{cs.tlInCharge}</span>
+                                                            </td>
+                                                            {['workload', 'communication', 'quality'].map(field => (
+                                                                <td key={field} className="px-6 py-4">
+                                                                    <div className="flex flex-col gap-1.5">
+                                                                        <select 
+                                                                            value={cs.ratings[field]} 
+                                                                            disabled={username === "Guest"}
+                                                                            onChange={(e) => updateCsRating(cs.id, field, e.target.value)}
+                                                                            className={`text-[9px] font-black uppercase border-none bg-transparent outline-none disabled:opacity-70 ${RATING_LEVELS.find(l => l.id === cs.ratings[field])?.color}`}
+                                                                        >
+                                                                            <option value="">-</option>
+                                                                            {RATING_LEVELS.map(lv => <option key={lv.id} value={lv.id} className="text-slate-800">{lv.label}</option>)}
+                                                                        </select>
+                                                                        {(cs.ratings[field] === 'at-risk' || cs.ratings[field] === 'critical') && (
+                                                                            <input 
+                                                                                disabled={username === "Guest"}
+                                                                                className="p-1.5 bg-red-50/50 border-b border-red-100 text-[8px] font-medium text-slate-600 focus:outline-none min-w-[120px] disabled:opacity-70" 
+                                                                                placeholder={t.note}
+                                                                                value={cs.comments?.[field] || ''} 
+                                                                                onChange={(e) => updateCsComment(cs.id, field, e.target.value)}
+                                                                            />
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                            ))}
+                                                            <td className="px-6 py-4 text-right">
+                                                                <div className="flex items-center justify-end gap-3">
+                                                                    {cs.reviewed && <LucideIcon name="check-circle" className="w-4 h-4 text-emerald-500" />}
+                                                                    {checkPermission(cs) && username !== "Guest" && (
+                                                                        <button onClick={() => deleteCustomer(cs.id)} className="text-slate-300 hover:text-red-500 transition-all" title={t.delete_client}>
+                                                                            <LucideIcon name="trash-2" className="w-4 h-4" />
+                                                                        </button>
+                                                                    )}
+                                                                    {username === MANAGER_NAME && (
+                                                                        <button onClick={() => markAsReviewed(cs)} className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase transition-all ${cs.reviewed ? 'bg-slate-100 text-slate-400' : 'bg-emerald-600 text-white shadow-md'}`}>
+                                                                            {cs.reviewed ? t.reset : t.confirm}
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )
+                        ) : activeHub === 'overview' ? (
+                            <div className="h-full overflow-y-auto pb-10">
+                                <div className="mb-6 flex justify-between items-end">
+                                    <div>
+                                        <h2 className="text-2xl font-black uppercase text-slate-800 tracking-tighter">{t.client_ratings_overview}</h2>
+                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{t.aggregated_from} ({selectedWeekId === 'current' ? t.current_week : formatDisplayWeek(csHistory.find(h => h.id === selectedWeekId)?.weekName)})</p>
+                                    </div>
+                                    <div className="flex flex-wrap gap-4">
+                                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-blue-500"></div><span className="text-[10px] font-black uppercase text-slate-600">{t.workload}</span></div>
+                                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-purple-500"></div><span className="text-[10px] font-black uppercase text-slate-600">{t.communication}</span></div>
+                                        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-pink-500"></div><span className="text-[10px] font-black uppercase text-slate-600">{t.quality}</span></div>
+                                    </div>
+                                </div>
+                                <div className="bg-white p-8 rounded-[32px] shadow-sm border border-slate-100 flex flex-col h-[calc(100vh-220px)] min-h-[500px]">
+                                    {(() => {
+                                        const data = getCombinedOverviewData();
+                                        const maxCount = Math.max(...data.map(d => d.total), 5); 
+                                        return (
+                                            <div className="flex-1 w-full min-h-0 relative flex items-end justify-around pb-6 pt-10 border-b-2 border-slate-100">
+                                                {data.map(item => (
+                                                    <div key={item.name} className="flex flex-col items-center w-1/3 md:w-1/4 h-full justify-end relative group hover:z-50">
+                                                        <span className="absolute -top-8 text-lg font-black text-slate-700">{item.total > 0 ? item.total : ''}</span>
+                                                        <div 
+                                                            className="w-full flex flex-col justify-end drop-shadow-2xl rounded-t-[20px] rounded-b-md overflow-visible"
+                                                            style={{ 
+                                                                height: `${(item.total / maxCount) * 100}%`, 
+                                                                minHeight: item.total > 0 ? '24px' : '4px',
+                                                                backgroundColor: item.total === 0 ? '#f1f5f9' : 'transparent',
+                                                                boxShadow: item.total > 0 ? '0 15px 30px -5px rgba(0,0,0,0.3)' : 'none'
+                                                            }}
+                                                        >
+                                                            {item.quality > 0 && (
+                                                                <div style={{ height: `${(item.quality / item.total) * 100}%` }} className="first:rounded-t-[20px] bg-gradient-to-r from-pink-600 via-pink-400 to-pink-700 shadow-[inset_-8px_0_10px_rgba(0,0,0,0.25),inset_8px_0_10px_rgba(255,255,255,0.3)] border-t border-white/30 w-full relative group/tt hover:opacity-95 cursor-pointer transition-all flex items-center justify-center text-[12px] text-white font-black">
+                                                                    {item.quality}
+                                                                    <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50 shadow-xl border border-slate-700">
+                                                                        <strong className="text-pink-300 block mb-1 border-b border-slate-600 pb-1">{t.quality}</strong>
+                                                                        <span className="font-normal">{item.qualityClients.join(', ')}</span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {item.communication > 0 && (
+                                                                <div style={{ height: `${(item.communication / item.total) * 100}%` }} className="first:rounded-t-[20px] bg-gradient-to-r from-purple-600 via-purple-400 to-purple-700 shadow-[inset_-8px_0_10px_rgba(0,0,0,0.25),inset_8px_0_10px_rgba(255,255,255,0.3)] border-t border-white/30 w-full relative group/tt hover:opacity-95 cursor-pointer transition-all flex items-center justify-center text-[12px] text-white font-black">
+                                                                    {item.communication}
+                                                                    <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50 shadow-xl border border-slate-700">
+                                                                        <strong className="text-purple-300 block mb-1 border-b border-slate-600 pb-1">{t.communication}</strong>
+                                                                        <span className="font-normal">{item.communicationClients.join(', ')}</span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {item.workload > 0 && (
+                                                                <div style={{ height: `${(item.workload / item.total) * 100}%` }} className="first:rounded-t-[20px] bg-gradient-to-r from-blue-600 via-blue-400 to-blue-700 shadow-[inset_-8px_0_10px_rgba(0,0,0,0.25),inset_8px_0_10px_rgba(255,255,255,0.3)] border-t border-white/30 w-full relative group/tt hover:opacity-95 cursor-pointer transition-all flex items-center justify-center text-[12px] text-white font-black rounded-b-md">
+                                                                    {item.workload}
+                                                                    <div className="absolute hidden group-hover/tt:block bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white p-2 rounded-lg text-xs w-max max-w-[150px] text-center z-50 shadow-xl border border-slate-700">
+                                                                        <strong className="text-blue-300 block mb-1 border-b border-slate-600 pb-1">{t.workload}</strong>
+                                                                        <span className="font-normal">{item.workloadClients.join(', ')}</span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <span className="absolute -bottom-8 text-sm font-black text-slate-500 uppercase tracking-tighter whitespace-nowrap">{item.name}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
                             </div>
-                        ) : (
-                            <div className="space-y-4">
-                                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.client_name}</label><input className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold text-sm outline-none" placeholder={t.enter_name} value={newCsName} onChange={e => setNewCsName(e.target.value)} /></div>
-                                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.status_label}</label><div className="flex gap-2 p-1 bg-slate-50 rounded-xl border border-slate-100">{['Invoiced', 'Trial'].map(s => (<button key={s} onClick={() => setNewCsStatus(s)} className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${newCsStatus === s ? (s === 'Trial' ? 'bg-red-700 text-white shadow-md' : 'bg-slate-900 text-white shadow-md') : 'text-slate-400 hover:text-slate-600'}`}>{s === 'Trial' ? t.trial : s}</button>))}</div></div>
-                                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.region}</label><select className="w-full px-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-xs outline-none cursor-pointer" value={newCsRegion} onChange={e => setNewCsRegion(e.target.value)}>{REGIONS.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
-                                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.products}</label><div className="grid grid-cols-1 gap-2 bg-slate-50 p-4 rounded-2xl border border-slate-100 max-h-40 overflow-y-auto">{PRODUCTS.map(prod => (<label key={prod} className="flex items-center gap-3 cursor-pointer group"><input type="checkbox" className="w-5 h-5 rounded-lg border-2 border-slate-200 text-emerald-600" checked={selectedProducts.includes(prod)} onChange={() => toggleProduct(prod)}/><span className={`text-[11px] font-bold uppercase transition-colors ${selectedProducts.includes(prod) ? 'text-emerald-700' : 'text-slate-500'}`}>{prod}</span></label>))}</div></div>
-                                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.tl_in_charge}</label><select className="w-full px-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-xs outline-none cursor-pointer" value={newCsTL} onChange={e => setNewCsTL(e.target.value)}>{TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
-                                <button onClick={createCustomer} className="w-full py-5 bg-emerald-600 text-white rounded-[24px] font-black uppercase text-sm tracking-widest shadow-lg hover:bg-emerald-500 transition-all mt-4">{t.deploy_client}</button>
+                        ) : null}
+                    </main>
+
+                    {isModalOpen && username !== "Guest" && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+                            <div className="bg-white p-8 rounded-[40px] w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="text-xl font-black uppercase text-slate-800">{activeHub === 'task' ? t.new_task : t.add_client}</h3>
+                                    <button onClick={() => setIsModalOpen(false)} className="text-slate-300 hover:text-slate-900"><LucideIcon name="x" className="w-6 h-6" /></button>
+                                </div>
+                                {activeHub === 'task' ? (
+                                    <div className="space-y-4">
+                                        <input className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold text-sm outline-none" placeholder={t.task_name} value={newTitle} onChange={e => setNewTitle(e.target.value)} />
+                                        <div className="grid grid-cols-1 gap-3">
+                                            <select className="w-full px-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-xs" value={newAssignee} onChange={e => setNewAssignee(e.target.value)}>{TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                                            <input type="date" className="w-full px-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-xs outline-none" value={newDueDate} onChange={e => setNewDueDate(e.target.value)} />
+                                        </div>
+                                        <div className="flex items-center gap-2 p-3 bg-amber-50 rounded-xl border border-amber-100"><input type="checkbox" id="weekly" checked={isWeekly} onChange={e => setIsWeekly(e.target.checked)} /><label htmlFor="weekly" className="text-[10px] font-black text-amber-700 uppercase cursor-pointer select-none">{t.gold_tag}</label></div>
+                                        <button onClick={createTask} className="w-full py-5 bg-slate-900 text-white rounded-[24px] font-black uppercase text-sm tracking-widest hover:bg-blue-600 transition-all">{t.create}</button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.client_name}</label><input className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl font-bold text-sm outline-none" placeholder={t.enter_name} value={newCsName} onChange={e => setNewCsName(e.target.value)} /></div>
+                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.status_label}</label><div className="flex gap-2 p-1 bg-slate-50 rounded-xl border border-slate-100">{['Invoiced', 'Trial'].map(s => (<button key={s} onClick={() => setNewCsStatus(s)} className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${newCsStatus === s ? (s === 'Trial' ? 'bg-red-700 text-white shadow-md' : 'bg-slate-900 text-white shadow-md') : 'text-slate-400 hover:text-slate-600'}`}>{s === 'Trial' ? t.trial : s}</button>))}</div></div>
+                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.region}</label><select className="w-full px-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-xs outline-none cursor-pointer" value={newCsRegion} onChange={e => setNewCsRegion(e.target.value)}>{REGIONS.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
+                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.products}</label><div className="grid grid-cols-1 gap-2 bg-slate-50 p-4 rounded-2xl border border-slate-100 max-h-40 overflow-y-auto">{PRODUCTS.map(prod => (<label key={prod} className="flex items-center gap-3 cursor-pointer group"><input type="checkbox" className="w-5 h-5 rounded-lg border-2 border-slate-200 text-emerald-600" checked={selectedProducts.includes(prod)} onChange={() => toggleProduct(prod)}/><span className={`text-[11px] font-bold uppercase transition-colors ${selectedProducts.includes(prod) ? 'text-emerald-700' : 'text-slate-500'}`}>{prod}</span></label>))}</div></div>
+                                        <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.tl_in_charge}</label><select className="w-full px-4 py-4 bg-slate-50 border-none rounded-xl font-bold text-xs outline-none cursor-pointer" value={newCsTL} onChange={e => setNewCsTL(e.target.value)}>{TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                                        <button onClick={createCustomer} className="w-full py-5 bg-emerald-600 text-white rounded-[24px] font-black uppercase text-sm tracking-widest shadow-lg hover:bg-emerald-500 transition-all mt-4">{t.deploy_client}</button>
+                                    </div>
+                                )}
                             </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
-            )}
-        </div>
-    );
-}
+            );
+        }
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
